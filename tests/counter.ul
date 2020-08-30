@@ -1,0 +1,86 @@
+widget counter() {
+	state counted: i54 = 0;
+	return .div (
+		.button ("++") :: onclick ||(counted += 1)
+		.span (" " counted " ")
+		.button ("--") :: onclick ||(counted -= 1)
+	)
+}
+
+widget todolist(link list: string[]) {
+	state newitem: string = "";
+	trigger adviseFocus: i54; // triggers, when set, do a thing and then ø unset. eg this one sets focus and then the trigger goes away
+	
+	fn addnewitem() {
+		list.unshift(newitem)
+		newitem = ""
+	}
+	
+	return .div (
+		.input (type="text" value::oninput=&newitem) :: onkeydown |k| if(k.code === "Enter") addnewitem()
+		.button ("+ Add") :: onclick addnewitem()
+		// sort tells the list to keep a sorted copy
+		// inserts are inserted sorted for better performance
+		// only if eg the sort algorithm changes, then a full resort is required
+		// also same with a filter eg
+		// there may be some way to have an exception for a filter getting more specific but probably not easily
+		list.filter(|i| true).map |item, i| (
+			.li (
+				.div ("Index: " i " ")
+				.input (type="text" value::oninput=&item if(adviseFocus == i) :: dwth |m| m.focus()) :: onkeydown |k| if(k.code === "Enter") list.insert("", i + 1), adviseFocus = i + 1
+			)
+		)
+	)
+}
+
+widget networkrequest() {
+	// state are variables that when changed update things.
+	// the default value must be constant, eg a value directly or a non linked arg
+	// another state variable cannot be used in the default for a state variable because that might change
+	state text: string = "";
+	state status: union{none, uploading, error: string, uploaded: string} = .none;
+	// can't use state for this because it would report an error that the default value must be constant/cannot change after initialization.
+	// bind is a const that can change, but you cannot set it.
+	bind disable: bool = switch(status) {.uploading => true, else => false};
+	
+	fn postText(text: {text: string}): {message: string}!{code: string} {
+		const response = fetch("https://firebasedynamiclinks.googleapis.com/v1/shortLinks?key=AIzaSyAp1bFmhU7jx2tdcDzXz1cJu_9kyQgB5QQ", {
+			method: "POST", headers: {"Content-Type": "application/json"},
+			body: JSON.stringify({
+				dynamicLinkInfo: {domainUriPrefix: "s.pfg.pw", link: "https://pfg.pw/spoilerbot/spoiler?s="..encodeURIComponent(JSON.stringify(text))},
+				suffix: {option: "SHORT"},
+			}),
+		) catch |e| {
+			return error.{message: e.toString()}
+		};
+		const jsonv = response.json() catch |e| return error.{message: e.toString()}
+		if(!jsonv.shortLink) return error.{message: "bad json: "+JSON.stringify(jsonv)}
+		return {code: jsonv.shortLink.replace("https://s.pfg.pw/", "")};
+	}
+	
+	fn submit() {
+		if(status.uploading) unreachable;
+		status = .uploading;
+		const postresult = postText({text: data.text}) catch |e| {
+			status = .error {e.message}
+			return;
+		}
+		status = .uploaded {postresult.code};
+	}
+	
+	return .div (
+		"Characters: " text.length "/2000"
+		.div (.textarea (if(disable) disabled="", rows=text.split("\n").length + 4, style="width:100%", value::oninput=text))
+		.div (.button (if(disable) disabled="") :: onclick ||async submit())
+	)
+}
+
+globalmain {
+	state list: string[] = [];
+	std.mount(.div (
+		counter()
+		todolist(&list)
+		todolist(&list)
+		networkrequest()
+	), js`document.body`)
+}
