@@ -1,0 +1,9 @@
+widget counter() {
+	state counted: i54 = 0;
+	return .div (
+		:title="text"
+		.button ("++") :: onclick ||(counted += 1),
+		.span (" ", counted, " "),
+		.button ("--") :: onclick ||(counted -= 1),
+	);
+};
