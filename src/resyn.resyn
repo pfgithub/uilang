@@ -1,0 +1,30 @@
+file = decl[';'];
+decl = identifier<name> '=' value<>;
+value = prefixop value | justvalue suffixop[]
+justvalue =
+	| var
+	| parens
+	| stringliteral 
+;
+suffixop =
+	| '<' identifier<exportname> '>'
+	| '[' value ']'
+;
+
+tokenizer {
+	start: {
+		A-Za-z => retry IDENTIFIER,
+		';' => return SEMI,
+		'[' => return '[',
+		']' => return ']',
+		' ''\n''\t' => skip,
+		'"' => return STRINGSTART push STRING,
+	}
+	identifier: {
+		A-Za-z => continue IDENTIFIER,
+		else => popreturn,
+	}
+	string: {
+		'"' => popreturn return STRINGEND,
+	}
+}
