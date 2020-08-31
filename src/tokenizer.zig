@@ -3,7 +3,7 @@ pub const Token = struct {
     pub const Type = enum {
         identifier,
         string_start,
-        string_chars,
+        string,
         string_escape,
         string_end,
         punctuation,
@@ -15,17 +15,17 @@ pub const Token = struct {
 const State = enum {
     main,
     identifier,
+    string,
+    string_ending,
 };
 
 pub const Tokenizer = struct {
-    statev: [5]State,
-    sv: usize,
+    state: State,
     text: []const u8,
     current: usize,
     pub fn init(text: []const u8) Tokenizer {
         return .{
-            .statev = [_]State{ .main, undefined, undefined, undefined, undefined },
-            .sv = 0,
+            .state = .main,
             .text = text,
             .current = 0,
         };
@@ -39,17 +39,6 @@ pub const Tokenizer = struct {
         defer tkr.current += 1;
         return tkr.peek();
     }
-    fn state(tkr: Tokenizer) State {
-        return tkr.statev[tkr.sv];
-    }
-    fn pushState(tkr: *Tokenizer, ns: State) void {
-        tkr.sv += 1;
-        tkr.statev[tkr.sv] = ns;
-    }
-    fn popState(tkr: *Tokenizer) void {
-        if (tkr.sv == 0) tkr.sv += 1; // TODO (end)
-        tkr.sv -= 1;
-    }
     fn token(tkr: *Tokenizer, start: usize, ttype: Token.Type) Token {
         return .{
             .kind = ttype,
@@ -60,14 +49,19 @@ pub const Tokenizer = struct {
     pub fn next(tkr: *Tokenizer) !?Token {
         var start = tkr.current;
         while (true) {
-            switch (tkr.state()) {
+            switch (tkr.state) {
                 .main => {
                     switch (tkr.peek()) {
                         0 => return null,
-                        'a'...'z', 'A'...'Z' => tkr.pushState(.identifier),
+                        'a'...'z', 'A'...'Z' => tkr.state = .identifier,
                         ' ', '\n', '\t' => _ = {
                             _ = tkr.take();
                             start = tkr.current;
+                        },
+                        '\'' => {
+                            _ = tkr.take();
+                            tkr.state = .string;
+                            return tkr.token(start, .string_start);
                         },
                         else => |char| {
                             inline for ("[]{}();:,=|") |c| {
@@ -83,9 +77,25 @@ pub const Tokenizer = struct {
                 .identifier => switch (tkr.peek()) {
                     'a'...'z', 'A'...'Z', '0'...'9' => _ = tkr.take(),
                     else => {
-                        tkr.popState();
+                        tkr.state = .main;
                         return tkr.token(start, .identifier);
                     },
+                },
+                .string => switch (tkr.peek()) {
+                    0, '\n' => return error.IllegalCharacter,
+                    '\'' => {
+                        tkr.state = .string_ending;
+                        return tkr.token(start, .string);
+                    },
+                    else => _ = tkr.take(),
+                },
+                .string_ending => switch (tkr.peek()) {
+                    '\'' => {
+                        tkr.state = .main;
+                        _ = tkr.take();
+                        return tkr.token(start, .string_end);
+                    },
+                    else => unreachable, // shouldn't be in this state
                 },
             }
         }
@@ -111,9 +121,9 @@ fn testTokenizer(code: []const u8, expected: []const Token.Type, expcdtxt: []con
 
 test "tokenizer" {
     const code =
-        \\widget counter() {
+        \\file = decl[';'];
     ;
-    const expected = [_]Token.Type{ .identifier, .identifier, .punctuation, .punctuation, .punctuation };
-    const expcdtxt = [_][]const u8{ "widget", "counter", "(", ")", "{" };
+    const expected = [_]Token.Type{ .identifier, .punctuation, .identifier, .punctuation, .string_start, .string, .string_end, .punctuation, .punctuation };
+    const expcdtxt = [_][]const u8{ "file", "=", "decl", "[", "'", ";", "'", "]", ";" };
     testTokenizer(code, &expected, &expcdtxt);
 }
