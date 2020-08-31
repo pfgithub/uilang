@@ -1,5 +1,6 @@
-const Token = struct {
-    const Type = enum {
+// why not just a union of name: []const u8?
+pub const Token = struct {
+    pub const Type = enum {
         identifier,
         string_start,
         string_chars,
@@ -7,7 +8,7 @@ const Token = struct {
         string_end,
         punctuation,
     };
-    type: Type,
+    kind: Type,
     text: []const u8,
 };
 
@@ -16,7 +17,7 @@ const State = enum {
     identifier,
 };
 
-const Tokenizer = struct {
+pub const Tokenizer = struct {
     statev: [5]State,
     sv: usize,
     text: []const u8,
@@ -51,7 +52,7 @@ const Tokenizer = struct {
     }
     fn token(tkr: *Tokenizer, start: usize, ttype: Token.Type) Token {
         return .{
-            .type = ttype,
+            .kind = ttype,
             .text = tkr.text[start..tkr.current],
         };
     }
@@ -69,7 +70,7 @@ const Tokenizer = struct {
                             start = tkr.current;
                         },
                         else => |char| {
-                            inline for ("[]{}();:,") |c| {
+                            inline for ("[]{}();:,=|") |c| {
                                 if (char == c) {
                                     _ = tkr.take();
                                     return tkr.token(start, .punctuation);
@@ -80,7 +81,7 @@ const Tokenizer = struct {
                     }
                 },
                 .identifier => switch (tkr.peek()) {
-                    'a'...'z', 'A'...'Z' => _ = tkr.take(),
+                    'a'...'z', 'A'...'Z', '0'...'9' => _ = tkr.take(),
                     else => {
                         tkr.popState();
                         return tkr.token(start, .identifier);
@@ -99,8 +100,8 @@ fn testTokenizer(code: []const u8, expected: []const Token.Type, expcdtxt: []con
     if (expected.len != expcdtxt.len) @panic("bad lens");
     while (tkr.next() catch @panic("bad character")) |tok| : (i += 1) {
         if (i >= expected.len) std.debug.panic("got unexpected token {} {}", .{ tok, i });
-        if (tok.@"type" != expected[i]) {
-            std.debug.panic("expected {}, got {}", .{ expected[i], tok.@"type" });
+        if (tok.kind != expected[i]) {
+            std.debug.panic("expected {}, got {}", .{ expected[i], tok.kind });
         }
         if (!std.mem.eql(u8, tok.text, expcdtxt[i])) {
             std.debug.panic("expected \"{}\", got \"{}\"", .{ expcdtxt[i], tok.text });
@@ -110,9 +111,9 @@ fn testTokenizer(code: []const u8, expected: []const Token.Type, expcdtxt: []con
 
 test "tokenizer" {
     const code =
-        \\hi: bye
+        \\widget counter() {
     ;
-    const expected = [_]Token.Type{ .identifier, .punctuation, .identifier };
-    const expcdtxt = [_][]const u8{ "hi", ":", "bye" };
+    const expected = [_]Token.Type{ .identifier, .identifier, .punctuation, .punctuation, .punctuation };
+    const expcdtxt = [_][]const u8{ "widget", "counter", "(", ")", "{" };
     testTokenizer(code, &expected, &expcdtxt);
 }

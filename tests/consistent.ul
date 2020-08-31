@@ -1,7 +1,7 @@
 widget counter() {
 	state counted: i54 = 0;
 	return .div (
-		:title="text"
+		:class="counter",
 		.button ("++") :: onclick ||(counted += 1),
 		.span (" ", counted, " "),
 		.button ("--") :: onclick ||(counted -= 1),
