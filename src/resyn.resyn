@@ -1,30 +1,32 @@
-file = decl[';'];
-decl = identifier<name> '=' value<>;
-value = prefixop value | justvalue suffixop[]
-justvalue =
-	| var
+file = decl[';']<decls>;
+decl = identifier<name> '=' component<value>;
+
+// component = _component_noop2["|", nolast]
+// _component_noop2 = _component_noop[]
+// _component_noop = _component_nosuffix suffixop[]
+// _component_nosuffix = … the rest
+component =
+	| #operator("|")<or_op>
+	| #operator()<p_op>
+	| #suffix(suffixop)
+	| identifier<decl_ref>
 	| parens
-	| stringliteral 
+	| string
+	| magic
 ;
+parens = '(' component ')';
+string = STRING_START<> (STRING | STRING_ESCAPE<escape>)[]<bits> STRING_END<>;
+magic = '#' identifier<name> '(' component[',']<args> ')';
+
 suffixop =
-	| '<' identifier<exportname> '>'
-	| '[' value ']'
+	| nameset
+	| array
+	| optional
 ;
 
-tokenizer {
-	start: {
-		A-Za-z => retry IDENTIFIER,
-		';' => return SEMI,
-		'[' => return '[',
-		']' => return ']',
-		' ''\n''\t' => skip,
-		'"' => return STRINGSTART push STRING,
-	}
-	identifier: {
-		A-Za-z => continue IDENTIFIER,
-		else => popreturn,
-	}
-	string: {
-		'"' => popreturn return STRINGEND,
-	}
-}
+identifier = IDENTIFIER;
+
+// sets the name of the thing. the default name is the decl_ref name. <> causes the item to not be put in the result struct.
+nameset = '<' identifier?<name> '>';
+array = '[' component? ']';
+optional = '?';

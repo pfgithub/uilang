@@ -17,6 +17,7 @@ const State = enum {
     identifier,
     string,
     string_ending,
+    comment,
 };
 
 pub const Tokenizer = struct {
@@ -53,7 +54,7 @@ pub const Tokenizer = struct {
                 .main => {
                     switch (tkr.peek()) {
                         0 => return null,
-                        'a'...'z', 'A'...'Z' => tkr.state = .identifier,
+                        'a'...'z', 'A'...'Z', '_', 128...255 => tkr.state = .identifier,
                         ' ', '\n', '\t' => _ = {
                             _ = tkr.take();
                             start = tkr.current;
@@ -62,6 +63,14 @@ pub const Tokenizer = struct {
                             _ = tkr.take();
                             tkr.state = .string;
                             return tkr.token(start, .string_start);
+                        },
+                        '/' => {
+                            _ = tkr.take();
+                            if (tkr.peek() != '/') {
+                                return tkr.token(start, .punctuation);
+                            }
+                            _ = tkr.take();
+                            tkr.state = .comment;
                         },
                         else => |char| {
                             inline for ("[]{}();:,=|") |c| {
@@ -75,7 +84,7 @@ pub const Tokenizer = struct {
                     }
                 },
                 .identifier => switch (tkr.peek()) {
-                    'a'...'z', 'A'...'Z', '0'...'9' => _ = tkr.take(),
+                    'a'...'z', 'A'...'Z', '0'...'9', '_', 128...255 => _ = tkr.take(),
                     else => {
                         tkr.state = .main;
                         return tkr.token(start, .identifier);
@@ -96,6 +105,10 @@ pub const Tokenizer = struct {
                         return tkr.token(start, .string_end);
                     },
                     else => unreachable, // shouldn't be in this state
+                },
+                .comment => switch (tkr.peek()) {
+                    0, '\n' => tkr.state = .main,
+                    else => _ = tkr.take(),
                 },
             }
         }
@@ -121,7 +134,7 @@ fn testTokenizer(code: []const u8, expected: []const Token.Type, expcdtxt: []con
 
 test "tokenizer" {
     const code =
-        \\file = decl[';'];
+        \\file = decl[';']; // comment
     ;
     const expected = [_]Token.Type{ .identifier, .punctuation, .identifier, .punctuation, .string_start, .string, .string_end, .punctuation, .punctuation };
     const expcdtxt = [_][]const u8{ "file", "=", "decl", "[", "'", ";", "'", "]", ";" };
