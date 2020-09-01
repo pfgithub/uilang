@@ -104,16 +104,17 @@ const Parens = struct {
     }
 };
 const String = struct {
-    bits: []union(enum) {
-        string: *STRING,
-        escape: *STRING_ESCAPE,
-    },
+    const StringBit = union(enum) {
+        string: []const u8,
+        escape: []const u8,
+    };
+    bits: []StringBit,
     pub fn print(string: String, out: anytype) @TypeOf(out).Error!void {
         try out.writeAll("\"");
         for (string.bits) |bit| {
             switch (bit) {
-                .string => |v| try out.writeAll(v.text),
-                .escape => |v| try out.writeAll(v.text),
+                .string => |v| try out.writeAll(v),
+                .escape => |v| try out.writeAll(v),
             }
         }
         try out.writeAll("\"");
@@ -154,10 +155,10 @@ const Identifier = struct {
 };
 
 const Nameset = struct {
-    name: *Identifier,
+    name: ?*Identifier,
     pub fn print(ns: Nameset, out: anytype) @TypeOf(out).Error!void {
         try out.writeAll("<");
-        try ns.name.print(out);
+        if (ns.name) |nm| try nm.print(out);
         try out.writeAll(">");
     }
 };
@@ -377,7 +378,13 @@ pub fn parseParens(parser: *Parser) ParseError!Parens {
 /// string = STRING_START<> (STRING | STRING_ESCAPE<escape>)[]<bits> STRING_END<>;
 pub fn parseString(parser: *Parser) ParseError!String {
     _ = try parseToken(parser, .string_start, null);
-    unreachable; // TODO
+    var stringBits = std.ArrayList(String.StringBit).init(parser.arena);
+    while (true) {
+        const rtxt = parseToken(parser, .string, null) catch break;
+        try stringBits.append(.{ .string = rtxt.text });
+    }
+    _ = parseToken(parser, .string_end, null) catch @panic("hard fail");
+    return String{ .bits = stringBits.toOwnedSlice() };
 }
 
 /// magic = '#' identifier<name> '(' component[',']<args> ')';
@@ -389,18 +396,37 @@ pub fn parseMagic(parser: *Parser) ParseError!Magic {
 /// nameset = '<' identifier?<name> '>';
 pub fn parseNameset(parser: *Parser) ParseError!Nameset {
     _ = try parseToken(parser, .punctuation, "<");
-    unreachable; // TODO
+
+    const rv: ?*Identifier = blk: {
+        const v = parseToken(parser, .identifier, null) catch break :blk null;
+        const allocated = try parser.arena.create(Identifier);
+        allocated.* = .{ .name = v.text };
+        break :blk allocated;
+    };
+
+    _ = parseToken(parser, .punctuation, ">") catch @panic("hard fail");
+
+    return Nameset{ .name = rv };
 }
 
 /// array = '[' component? ']';
 pub fn parseArray(parser: *Parser) ParseError!Array {
     _ = try parseToken(parser, .punctuation, "[");
-    unreachable; // TODO
+    const component: ?*Component = blk: {
+        const component = parseComponent(parser) catch break :blk null;
+        const allocated = try parser.arena.create(@TypeOf(component));
+        allocated.* = component;
+        break :blk allocated;
+    };
+    _ = parseToken(parser, .punctuation, "]") catch @panic("hard fail");
+    return Array{
+        .component = component,
+    };
 }
 
 /// optional = '?';
 pub fn parseOptional(parser: *Parser) ParseError!Optional {
-    _ = try parseToken(parser, .punctuation, "[");
+    _ = try parseToken(parser, .punctuation, "?");
     return Optional{};
 }
 
@@ -417,8 +443,8 @@ pub fn parseToken(parser: *Parser, tokenKind: Token.Type, expectedText: ?[]const
 
 test "demo" {
     const code =
-        \\ testname = testvar testvar2 | testvar3;
-        \\ testname2 = testvar testvar2 | testvar3;
+        \\ file = decl[';']<decls>;
+        \\ decl = identifier<name> '=' component<value>;
     ;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
@@ -428,7 +454,9 @@ test "demo" {
     defer parser.deinit();
 
     const file = try parseFile(&parser);
-    if ((try parser.nextToken()) != null) return error.RemainingTokens;
+    if ((try parser.nextToken())) |tok| {
+        std.debug.panic("Remaining token: {}\n", .{tok});
+    }
 
     const os = std.io.getStdOut().outStream();
     try os.writeAll("\n\n");

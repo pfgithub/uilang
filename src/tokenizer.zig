@@ -73,13 +73,14 @@ pub const Tokenizer = struct {
                             tkr.state = .comment;
                         },
                         else => |char| {
-                            inline for ("[]{}();:,=|") |c| {
+                            inline for ("[]{}();:,=|?<>!") |c| {
                                 if (char == c) {
                                     _ = tkr.take();
                                     return tkr.token(start, .punctuation);
                                 }
                             }
-                            return error.IllegalCharacter;
+                            std.debug.panic("Illegal character: `{c}`", .{char});
+                            // return error.IllegalCharacter;
                         },
                     }
                 },
