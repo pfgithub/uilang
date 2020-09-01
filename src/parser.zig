@@ -390,7 +390,24 @@ pub fn parseString(parser: *Parser) ParseError!String {
 /// magic = '#' identifier<name> '(' component[',']<args> ')';
 pub fn parseMagic(parser: *Parser) ParseError!Magic {
     _ = try parseToken(parser, .punctuation, "#");
-    unreachable; // TODO
+
+    const name = parseToken(parser, .identifier, null) catch @panic("hard fail");
+    const allocated = try parser.arena.create(Identifier);
+    allocated.* = .{ .name = name.text };
+
+    var argsAL = std.ArrayList(Component).init(parser.arena);
+
+    _ = parseToken(parser, .punctuation, "(") catch @panic("hard fail");
+    while (true) {
+        try argsAL.append(parseComponent(parser) catch break);
+        _ = parseToken(parser, .punctuation, ",") catch break;
+    }
+    _ = parseToken(parser, .punctuation, ")") catch @panic("hard fail");
+
+    return Magic{
+        .name = allocated,
+        .args = argsAL.toOwnedSlice(),
+    };
 }
 
 /// nameset = '<' identifier?<name> '>';
@@ -442,10 +459,7 @@ pub fn parseToken(parser: *Parser, tokenKind: Token.Type, expectedText: ?[]const
 }
 
 test "demo" {
-    const code =
-        \\ file = decl[';']<decls>;
-        \\ decl = identifier<name> '=' component<value>;
-    ;
+    const code = @embedFile("resyn.resyn");
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();

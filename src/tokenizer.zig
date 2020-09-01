@@ -16,7 +16,9 @@ const State = enum {
     main,
     identifier,
     string,
+    string_dblquote,
     string_ending,
+    string_ending_dblquote,
     comment,
 };
 
@@ -64,6 +66,11 @@ pub const Tokenizer = struct {
                             tkr.state = .string;
                             return tkr.token(start, .string_start);
                         },
+                        '"' => {
+                            _ = tkr.take();
+                            tkr.state = .string_dblquote;
+                            return tkr.token(start, .string_start);
+                        },
                         '/' => {
                             _ = tkr.take();
                             if (tkr.peek() != '/') {
@@ -73,7 +80,7 @@ pub const Tokenizer = struct {
                             tkr.state = .comment;
                         },
                         else => |char| {
-                            inline for ("[]{}();:,=|?<>!") |c| {
+                            inline for ("[]{}();:,=|?<>!#") |c| {
                                 if (char == c) {
                                     _ = tkr.take();
                                     return tkr.token(start, .punctuation);
@@ -99,8 +106,24 @@ pub const Tokenizer = struct {
                     },
                     else => _ = tkr.take(),
                 },
+                .string_dblquote => switch (tkr.peek()) {
+                    0, '\n' => return error.IllegalCharacter,
+                    '"' => {
+                        tkr.state = .string_ending_dblquote;
+                        return tkr.token(start, .string);
+                    },
+                    else => _ = tkr.take(),
+                },
                 .string_ending => switch (tkr.peek()) {
                     '\'' => {
+                        tkr.state = .main;
+                        _ = tkr.take();
+                        return tkr.token(start, .string_end);
+                    },
+                    else => unreachable, // shouldn't be in this state
+                },
+                .string_ending_dblquote => switch (tkr.peek()) {
+                    '"' => {
                         tkr.state = .main;
                         _ = tkr.take();
                         return tkr.token(start, .string_end);
