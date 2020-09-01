@@ -48,7 +48,7 @@ const ParseError = error{
 };
 
 // idk what to do about positions yet. todo.
-const File = struct {
+pub const File = struct {
     decls: []Decl,
     pub fn print(file: File, out: anytype) @TypeOf(out).Error!void {
         for (file.decls) |decl| {
@@ -57,7 +57,7 @@ const File = struct {
         }
     }
 };
-const Decl = struct {
+pub const Decl = struct {
     name: []const u8,
     value: *Component,
     pub fn print(decl: Decl, out: anytype) @TypeOf(out).Error!void {
@@ -66,7 +66,7 @@ const Decl = struct {
         try decl.value.print(out);
     }
 };
-const Component = union(enum) {
+pub const Component = union(enum) {
     suffixop: struct { component: *Component, suffixop: *Suffixop },
     or_op: []Component, //, operator: OPERATOR eg
     p_op: []Component,
@@ -95,7 +95,7 @@ const Component = union(enum) {
         }
     }
 };
-const Parens = struct {
+pub const Parens = struct {
     component: *Component,
     pub fn print(parens: Parens, out: anytype) @TypeOf(out).Error!void {
         try out.writeAll("(");
@@ -103,7 +103,7 @@ const Parens = struct {
         try out.writeAll(")");
     }
 };
-const String = struct {
+pub const String = struct {
     const StringBit = union(enum) {
         string: []const u8,
         escape: []const u8,
@@ -120,7 +120,7 @@ const String = struct {
         try out.writeAll("\"");
     }
 };
-const Magic = struct {
+pub const Magic = struct {
     name: *Identifier,
     args: []Component,
     pub fn print(magic: Magic, out: anytype) @TypeOf(out).Error!void {
@@ -134,7 +134,7 @@ const Magic = struct {
         try out.writeAll(")");
     }
 };
-const Suffixop = union(enum) {
+pub const Suffixop = union(enum) {
     nameset: *Nameset,
     array: *Array,
     optional: *Optional,
@@ -147,14 +147,14 @@ const Suffixop = union(enum) {
     }
 };
 
-const Identifier = struct {
+pub const Identifier = struct {
     name: []const u8,
     pub fn print(id: Identifier, out: anytype) @TypeOf(out).Error!void {
         try out.writeAll(id.name);
     }
 };
 
-const Nameset = struct {
+pub const Nameset = struct {
     name: ?*Identifier,
     pub fn print(ns: Nameset, out: anytype) @TypeOf(out).Error!void {
         try out.writeAll("<");
@@ -162,7 +162,7 @@ const Nameset = struct {
         try out.writeAll(">");
     }
 };
-const Array = struct {
+pub const Array = struct {
     component: ?*Component,
     pub fn print(ar: Array, out: anytype) @TypeOf(out).Error!void {
         try out.writeAll("[");
@@ -170,7 +170,7 @@ const Array = struct {
         try out.writeAll("]");
     }
 };
-const Optional = struct {
+pub const Optional = struct {
     unused: u1 = 0,
     pub fn print(op: Optional, out: anytype) @TypeOf(out).Error!void {
         try out.writeAll("?");
