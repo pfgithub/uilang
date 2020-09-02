@@ -148,7 +148,11 @@ fn parseString(alloc: *Alloc, string: parser.String) ![]const u8 {
 // fn parse__25() ParseError!void { return try parseToken("(")}
 pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Structure, out: anytype, myid: usize) (@TypeOf(out).Error || OOM)!void {
     const fnName: usize = myid;
-    try out.print("fn parse_{} () ParseError!_{}", .{ fnName, structure.typeNameID });
+    // could be neat:
+    // try out.writeAll("/// ");
+    // try structure.component.print(out);
+    // try out.writeAll("\n");
+    try out.print("fn parse_{} (parser: *Parser) ParseError!_{}", .{ fnName, structure.typeNameID });
     try out.writeAll(" {\n");
     try out.writeAll(
         \\    const sb = parser.startBit();
@@ -208,8 +212,12 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
             );
         },
         .token => |tktxt| {
-            const kind: enum { punctuation, identifier } = .punctuation;
-            try out.print("    return try parseToken(parser, .{}, ", .{std.meta.tagName(kind)});
+            const kind: enum { punctuation, identifier } = for (tktxt) |char| switch (char) {
+                'a'...'z', 'A'...'Z', '0'...'9', '_' => break .identifier,
+                else => break .punctuation,
+            }
+            else .punctuation;
+            try out.print("    return try _parseToken(parser, .{}, ", .{std.meta.tagName(kind)});
             try printZigString(tktxt, out);
             try out.writeAll(");\n");
         },
@@ -244,7 +252,7 @@ pub const Generator = struct {
         return gen.uniqueid;
     }
 
-    pub fn parse(alloc: *Alloc, code: []const u8) !void {
+    pub fn parse(alloc: *Alloc, code: []const u8, out: anytype) !void {
         var parserr = parser.Parser.init(alloc, code);
         defer parserr.deinit();
 
@@ -255,7 +263,8 @@ pub const Generator = struct {
 
         const os = std.io.getStdOut().outStream();
 
-        try os.writeAll("\n\n");
+        try out.writeAll(@embedFile("parser_header.zig"));
+        try out.writeAll("\n\n"); // I would use ++ on embedFile but current zig makes that include the file twice, once without \n\n and once with it.
 
         var gen = Generator{ .alloc = alloc };
 
@@ -265,21 +274,19 @@ pub const Generator = struct {
             const structure = try Structure.createForComponent(alloc, decl.value.*, &gen);
             // top level structures must be force wrapped into a struct
 
-            try os.writeAll("pub const ");
+            try out.writeAll("pub const ");
             try writeTypeNameFor(os, decl.name);
-            try os.writeAll(" = ");
+            try out.writeAll(" = ");
             try structure.print(os);
-            try os.writeAll(";\n");
+            try out.writeAll(";\n");
             try structure.printDecl(os);
 
             const resid = gen.nextID();
             try codegenForStructure(alloc, &gen, structure, os, resid);
-            try os.writeAll("pub const parse");
+            try out.writeAll("pub const parse");
             try writeTypeNameFor(os, decl.name);
-            try os.print(" = _{};\n", .{resid});
+            try out.print(" = _{};\n", .{resid});
         }
-
-        try os.writeAll("\n\n");
     }
 
     pub fn deinit(generator: *Generator) void {}
@@ -295,11 +302,9 @@ test "generator" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
 
-    try Generator.parse(&arena.allocator, code);
-    // defer generator.deinit();
-
     const os = std.io.getStdOut().outStream();
+
     try os.writeAll("\n\n");
-    // try generator.generate(os);
+    try Generator.parse(&arena.allocator, code, os);
     try os.writeAll("\n\n");
 }
