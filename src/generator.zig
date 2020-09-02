@@ -28,7 +28,6 @@ const StructField = struct { field: ?[]const u8, structure: Structure };
 // this needs to store an id or something
 // so printing it can give a type name rather than a type
 const StructureKind = union(enum) {
-    empty,
     struc: struct {
         values: []StructField,
         // if values.len == 0, print struct {__: u1 = 0}
@@ -36,6 +35,10 @@ const StructureKind = union(enum) {
     pointer: []const u8,
     token: []const u8,
     optional: *Structure,
+    array_only: struct {
+        item: *Structure,
+        joiner: *Structure,
+    },
 };
 const Structure = struct {
     name: ?[]const u8, // the name if it has one
@@ -54,9 +57,6 @@ const Structure = struct {
     fn printDecl(structure: Structure, out: anytype) @TypeOf(out).Error!void {
         try out.print("const _{} = ", .{structure.typeNameID});
         switch (structure.kind) {
-            .empty => try out.writeAll(
-                \\struct {__: u1 = 0}
-            ),
             .struc => |sct| {
                 try out.writeAll("struct {\n");
                 for (sct.values) |val| {
@@ -89,6 +89,14 @@ const Structure = struct {
                 try out.writeAll(";\n");
 
                 try optv.printDecl(out);
+            },
+            .array_only => |ao| {
+                try out.writeAll("[]"); // []const ?
+                try ao.item.print(out);
+                try out.writeAll(";\n");
+
+                try ao.item.printDecl(out);
+                try ao.joiner.printDecl(out);
             },
         }
     }
@@ -128,8 +136,14 @@ const Structure = struct {
                 const structure = try createForComponent(alloc, sfxop.component.*, gen);
                 switch (sfxop.suffixop.*) {
                     .nameset => |ns| return Structure.init(gen, if (ns.name) |q| q.name else null, structure.kind),
-                    .array => unreachable, // TODO :: note that if the seperator is named,
-                    // the type may be []struct {seperatorname: , valuename: } instead of []value
+                    .array => |ary| {
+                        if (ary.component == null) unreachable; // TODO support arrays without joiners
+                        const joiner = try createForComponent(alloc, ary.component.?.*, gen);
+                        if (joiner.name != null) unreachable; // TODO support named joiners
+                        const allocatedStructure = try allocDupe(alloc, structure);
+                        const allocatedJoiner = try allocDupe(alloc, joiner);
+                        return Structure.init(gen, null, .{ .array_only = .{ .item = allocatedStructure, .joiner = allocatedJoiner } });
+                    },
                     .optional => {
                         const allocated = try alloc.create(Structure);
                         allocated.* = structure;
@@ -140,6 +154,12 @@ const Structure = struct {
         }
     }
 };
+
+fn allocDupe(alloc: *Alloc, a: anytype) !*@TypeOf(a) {
+    const c = try alloc.create(@TypeOf(a));
+    c.* = a;
+    return c;
+}
 
 fn parseString(alloc: *Alloc, string: parser.String) ![]const u8 {
     var res = std.ArrayList(u8).init(alloc);
@@ -227,7 +247,25 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
             try printZigString(tktxt, out);
             try out.writeAll(")).text;\n");
         },
-        else => try out.print("    @compileError(\"TODO: {}\");\n", .{std.meta.tagName(structure.kind)}),
+        .array_only => |ao| {
+            // item, joiner
+            const itemFnid = generator.nextID();
+            try nextCodegens.append(.{ .structure = ao.item, .fnid = itemFnid });
+            const joinerFnid = generator.nextID();
+            try nextCodegens.append(.{ .structure = ao.joiner, .fnid = joinerFnid });
+            @setEvalBranchQuota(1010100);
+            try out.print(
+                \\    var resAL = std.ArrayList(_{}).init(parser.alloc);
+                \\    while(true) {{
+                \\        // :: parse 1 catch break
+                \\        try resAL.append(_{}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}});
+                \\        // :: parse 2 catch break
+                \\        _ = _{}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}};
+                \\    }}
+                \\    return resAL.toOwnedSlice();
+                \\
+            , .{ ao.item.typeNameID, itemFnid, joinerFnid });
+        },
     }
     try out.writeAll(
         \\}
@@ -305,8 +343,8 @@ pub const Generator = struct {
 
 pub fn main() !void {
     const code =
-        \\ main = hello "world"?;
-        \\ hello = "hello";
+        \\ file = decl[';']<decls>;
+        \\ decl = "oi";
     ;
 
     var gpalloc = std.heap.GeneralPurposeAllocator(.{}){};

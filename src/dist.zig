@@ -78,54 +78,51 @@ fn _parseToken(parser: *Parser, tokenKind: Token.Type, expectedText: ?[]const u8
     return tok;
 }
 
-pub const Main = _3;
-const _3 = struct {
-    hello: _0,
-};
-const _0 = *Hello;
-const _2 = ?_1;
+pub const File = _3;
+const _3 = []_0;
+const _0 = *Decl;
 const _1 = []const u8;
 fn _4(parser: *Parser) ParseError!_3 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    const _6 = try _5(parser);
-    _ = try _7(parser);
-    return _3{
-        .hello = _6,
-    };
+    var resAL = std.ArrayList(_0).init(parser.alloc);
+    while (true) {
+        // :: parse 1 catch break
+        try resAL.append(_5(parser) catch |e| switch (e) {
+            error.OutOfMemory => return e,
+            error.ParseError => break,
+        });
+        // :: parse 2 catch break
+        _ = _6(parser) catch |e| switch (e) {
+            error.OutOfMemory => return e,
+            error.ParseError => break,
+        };
+    }
+    return resAL.toOwnedSlice();
 }
 fn _5(parser: *Parser) ParseError!_0 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    const _8 = try parseHello(parser);
-    const _9 = try parser.alloc.create(@TypeOf(_8));
-    _9.* = _8;
-    return _9;
+    const _7 = try parseDecl(parser);
+    const _8 = try parser.alloc.create(@TypeOf(_7));
+    _8.* = _7;
+    return _8;
 }
-fn _7(parser: *Parser) ParseError!_2 {
+fn _6(parser: *Parser) ParseError!_1 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    return _10(parser) catch |e| switch (e) {
-        error.OutOfMemory => return e,
-        error.ParseError => return null, // note that the called function already cancelBit'd so it's ok
-    };
+    return (try _parseToken(parser, .punctuation, ";")).text;
 }
-fn _10(parser: *Parser) ParseError!_1 {
+pub const parseFile = _4;
+pub const Decl = _9;
+const _9 = []const u8;
+fn _10(parser: *Parser) ParseError!_9 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    return (try _parseToken(parser, .identifier, "world")).text;
+    return (try _parseToken(parser, .identifier, "oi")).text;
 }
-pub const parseMain = _4;
-pub const Hello = _11;
-const _11 = []const u8;
-fn _12(parser: *Parser) ParseError!_11 {
-    const sb = parser.startBit();
-    errdefer parser.cancelBit(sb);
-
-    return (try _parseToken(parser, .identifier, "hello")).text;
-}
-pub const parseHello = _12;
+pub const parseDecl = _10;
