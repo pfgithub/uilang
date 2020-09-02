@@ -27,7 +27,7 @@ fn writeTypeNameFor(out: anytype, snakecase: []const u8) !void {
 const StructField = struct { field: ?[]const u8, structure: Structure };
 const UnionMagic = union(enum) {
     none: Structure,
-    operator: Structure,
+    operator: ?Structure,
     suffix: Structure,
 };
 const UnionField = struct { field: []const u8, magic: UnionMagic };
@@ -47,11 +47,11 @@ const StructureKind = union(enum) {
     },
     pointer: []const u8, // TODO maybe: make this *StructureKind.
     value: []const u8,
-    token: []const u8,
+    token: struct { kind: []const u8, expected: ?[]const u8 },
     optional: *Structure,
     array_only: struct {
         item: *Structure,
-        joiner: *Structure,
+        joiner: ?*Structure,
     },
 };
 const Structure = struct {
@@ -109,7 +109,7 @@ const Structure = struct {
                 for (sct.values) |val| {
                     switch (val.magic) {
                         .none => |base| try base.printDecl(out),
-                        .operator => |base| try base.printDecl(out),
+                        .operator => |base| if (base) |b| try b.printDecl(out),
                         .suffix => |base| try base.printDecl(out),
                     }
                 }
@@ -137,7 +137,7 @@ const Structure = struct {
                 try out.writeAll(";\n");
 
                 try ao.item.printDecl(out);
-                try ao.joiner.printDecl(out);
+                if (ao.joiner) |jnr| try jnr.printDecl(out);
             },
         }
     }
@@ -171,9 +171,13 @@ const Structure = struct {
                             switch (uamName) {
                                 .operator => {
                                     // aaa the indentation is too much help pls
-                                    if (uam.args.len != 1) unreachable; // TODO report error :: invalid number of args
-                                    const uamJoiner = try createForComponent(alloc, uam.args[0], gen);
-                                    if (uamJoiner.name != null) unreachable; // TODO support named operators
+                                    const uamJoiner: ?Structure = if (uam.args.len == 1) blk: {
+                                        const uamJoiner = try createForComponent(alloc, uam.args[0], gen);
+                                        if (uamJoiner.name != null) unreachable; // TODO support named operators
+                                        break :blk uamJoiner;
+                                    } else if (uam.args.len == 0) blk: {
+                                        break :blk null;
+                                    } else unreachable; // TODO report error :: invalid number of args
                                     // ok so structure is actually = to []ThisUnion
                                     // which is weird
                                     // maybe it should have no structure then
@@ -218,7 +222,10 @@ const Structure = struct {
             .parens => |pr| return createForComponent(alloc, pr.component.*, gen),
             .string => |str| {
                 const expctdTkn = try parseString(alloc, str.*);
-                return Structure.init(gen, null, .{ .token = expctdTkn });
+                return Structure.init(gen, null, .{ .token = .{ .kind = autoTokenKind(expctdTkn), .expected = expctdTkn } });
+            },
+            .token_ref => |token| {
+                return Structure.init(gen, token.token, .{ .token = .{ .kind = token.token, .expected = null } });
             },
             .magic => |magic| return Structure.init(gen, null, .{
                 .unattached_magic = .{ .name = magic.name.name, .args = magic.args },
@@ -228,13 +235,16 @@ const Structure = struct {
                 switch (sfxop.suffixop.*) {
                     .nameset => |ns| return Structure.init(gen, if (ns.name) |q| q.name else null, structure.kind),
                     .array => |ary| {
-                        if (ary.component == null) unreachable; // TODO support arrays without joiners
-                        const joiner = try createForComponent(alloc, ary.component.?.*, gen);
-                        if (joiner.name != null) unreachable; // TODO support named joiners
                         const allocatedStructure = switch (structure.kind) {
                             .pointer => |pname| try allocDupe(alloc, Structure.init(gen, structure.name, .{ .value = pname })),
                             else => try allocDupe(alloc, structure),
                         };
+                        if (ary.component == null) {
+                            return Structure.init(gen, null, .{ .array_only = .{ .item = allocatedStructure, .joiner = null } });
+                        }
+
+                        const joiner = try createForComponent(alloc, ary.component.?.*, gen);
+                        if (joiner.name != null) unreachable; // TODO support named joiners
                         const allocatedJoiner = try allocDupe(alloc, joiner);
                         return Structure.init(gen, null, .{ .array_only = .{ .item = allocatedStructure, .joiner = allocatedJoiner } });
                     },
@@ -264,6 +274,19 @@ fn parseString(alloc: *Alloc, string: parser.String) ![]const u8 {
         }
     }
     return res.toOwnedSlice();
+}
+
+// miscompilation workaround
+fn stringIf(condition: bool, one: []const u8, two: []const u8) []const u8 {
+    if (condition) return one else return two;
+}
+
+fn autoTokenKind(token: []const u8) []const u8 {
+    for (token) |char| switch (char) {
+        'a'...'z', 'A'...'Z', '0'...'9', '_' => return "identifier",
+        else => return "punctuation",
+    };
+    return "punctuation";
 }
 
 pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Structure, out: anytype, myid: usize) (@TypeOf(out).Error || OOM)!void {
@@ -302,7 +325,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                     },
                     .operator => |*nost| {
                         const joinerFnID = generator.nextID();
-                        try nextCodegens.append(.{ .structure = nost, .fnid = joinerFnID });
+                        if (nost.*) |*nv| try nextCodegens.append(.{ .structure = nv, .fnid = joinerFnID });
                         const nextFunctionHalf = generator.nextID();
 
                         // imagine: automatically detect
@@ -314,10 +337,10 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                         // oh my. is there a way to have named fields?
                         try out.print(
                             \\    var resAL = std.ArrayList(_{0}).init(parser.alloc);
-                            \\    _ = _{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => {{}}}}; // optional first joiner
+                            \\    {4}_ = _{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => {{}}}}; // optional first joiner
                             \\    while (true) {{
-                            \\        try resAL.append(_{2}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => return parser.err("last or disallowed")}});
-                            \\        _ = _{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}};
+                            \\        try resAL.append(_{2}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => {5}}});
+                            \\        {4}_ = _{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}};
                             \\    }}
                             \\    if (resAL.items.len == 0) return parser.err("no items");
                             \\    if (resAL.items.len == 1) return resAL.items[0];
@@ -328,7 +351,14 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                             \\    const sb = parser.startBit();
                             \\    errdefer parser.cancelBit(sb);
                             \\
-                        , .{ structure.typeNameID, joinerFnID, nextFunctionHalf, value.field });
+                        , .{
+                            structure.typeNameID,
+                            joinerFnID,
+                            nextFunctionHalf,
+                            value.field,
+                            stringIf(nost.* == null, "//", ""),
+                            stringIf(nost.* == null, "break", "return parser.err(\"last or disallowed\")"),
+                        });
                     },
                     .suffix => |*nost| {
                         const suffixopFnID = generator.nextID();
@@ -435,14 +465,11 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                 \\
             );
         },
-        .token => |tktxt| {
-            const kind: enum { punctuation, identifier } = for (tktxt) |char| switch (char) {
-                'a'...'z', 'A'...'Z', '0'...'9', '_' => break .identifier,
-                else => break .punctuation,
-            }
-            else .punctuation;
-            try out.print("    return (try _parseToken(parser, .{}, ", .{std.meta.tagName(kind)});
-            try printZigString(tktxt, out);
+        .token => |tk| {
+            try out.print("    return (try _parseToken(parser, .{}, ", .{tk.kind});
+            if (tk.expected) |xpcdt| try printZigString(xpcdt, out)
+            //zig fmt
+            else try out.writeAll("null");
             try out.writeAll(")).text;\n");
         },
         .array_only => |ao| {
@@ -450,19 +477,19 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
             const itemFnid = generator.nextID();
             try nextCodegens.append(.{ .structure = ao.item, .fnid = itemFnid });
             const joinerFnid = generator.nextID();
-            try nextCodegens.append(.{ .structure = ao.joiner, .fnid = joinerFnid });
+            if (ao.joiner) |jnr| try nextCodegens.append(.{ .structure = jnr, .fnid = joinerFnid });
             @setEvalBranchQuota(1010100);
             try out.print(
-                \\    var resAL = std.ArrayList(_{}).init(parser.alloc);
+                \\    var resAL = std.ArrayList(_{0}).init(parser.alloc);
                 \\    while(true) {{
                 \\        // :: parse 1 catch break
-                \\        try resAL.append(_{}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}});
+                \\        try resAL.append(_{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}});
                 \\        // :: parse 2 catch break
-                \\        _ = _{}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}};
+                \\        {3}_ = _{2}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}};
                 \\    }}
                 \\    return resAL.toOwnedSlice();
                 \\
-            , .{ ao.item.typeNameID, itemFnid, joinerFnid });
+            , .{ ao.item.typeNameID, itemFnid, joinerFnid, stringIf(ao.joiner == null, "//", "") });
         },
     }
     try out.writeAll(
@@ -540,17 +567,7 @@ pub const Generator = struct {
 };
 
 pub fn main() !void {
-    const code =
-        \\ math = 
-        \\    | #operator("+")<plus_op>
-        \\    | #operator("*")<times_op>
-        \\    | #suffix('!'<factorial>)<factorial>
-        \\    | parens
-        \\    | number
-        \\ ;
-        \\ parens = '(' math ')';
-        \\ number = 'a';
-    ;
+    const code = @embedFile("resyn.resyn");
 
     var gpalloc = std.heap.GeneralPurposeAllocator(.{}){};
     defer std.testing.expect(!gpalloc.deinit());

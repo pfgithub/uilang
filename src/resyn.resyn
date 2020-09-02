@@ -1,5 +1,5 @@
 file = decl[';']<decls>;
-decl = identifier<name> '=' component<value>;
+decl = :identifier<name> '=' component<value>;
 
 // component = _component_noop2["|", nolast]
 // _component_noop2 = _component_noop[]
@@ -8,15 +8,17 @@ decl = identifier<name> '=' component<value>;
 component =
 	| #operator("|")<or_op>
 	| #operator()<p_op>
-	| #suffix(suffixop)
-	| identifier<decl_ref>
+	| #suffix(suffixop)<suffixop>
+	| :identifier<decl_ref>
+	| token_ref
 	| parens
 	| string
 	| magic
 ;
+token_ref = ':' :identifier<token>;
 parens = '(' component ')';
-string = STRING_START<> (STRING | STRING_ESCAPE<escape>)[]<bits> STRING_END<>;
-magic = '#' identifier<name> '(' component[',']<args> ')';
+string = :string_start<> (:string | :string_escape<escape>)[]<bits> :string_end<>;
+magic = '#' :identifier<name> '(' component[',']<args> ')';
 
 suffixop =
 	| nameset
@@ -24,9 +26,7 @@ suffixop =
 	| optional
 ;
 
-identifier = IDENTIFIER;
-
 // sets the name of the thing. the default name is the decl_ref name. <> causes the item to not be put in the result struct.
-nameset = '<' identifier?<name> '>';
+nameset = '<' :identifier?<name> '>';
 array = '[' component? ']';
 optional = '?';

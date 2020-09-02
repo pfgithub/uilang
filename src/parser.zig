@@ -66,11 +66,15 @@ pub const Decl = struct {
         try decl.value.print(out);
     }
 };
+pub const TokenRef = struct {
+    token: []const u8,
+};
 pub const Component = union(enum) {
     suffixop: struct { component: *Component, suffixop: *Suffixop },
     or_op: []Component, //, operator: OPERATOR eg
     p_op: []Component,
     decl_ref: *Identifier,
+    token_ref: *TokenRef,
     parens: *Parens,
     string: *String,
     magic: *Magic,
@@ -89,6 +93,10 @@ pub const Component = union(enum) {
                 try q.print(out);
             },
             .decl_ref => |v| try v.print(out),
+            .token_ref => |v| {
+                try out.writeAll(":");
+                try v.print(out);
+            },
             .parens => |v| try v.print(out),
             .string => |v| try v.print(out),
             .magic => |v| try v.print(out),
@@ -300,6 +308,15 @@ fn parseComponent__NoSuffix(parser: *Parser) ParseError!Component {
         const allocated = try parser.arena.create(Identifier);
         allocated.* = .{ .name = v.text };
         return Component{ .decl_ref = allocated };
+    }
+
+    // | ':' identifier<token_ref>
+    blk: {
+        _ = parseToken(parser, .punctuation, ":") catch break :blk;
+        const v = parseToken(parser, .identifier, null) catch @panic("bad code");
+        const allocated = try parser.arena.create(TokenRef);
+        allocated.* = .{ .token = v.text };
+        return Component{ .token_ref = allocated };
     }
 
     // | parens

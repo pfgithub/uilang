@@ -82,34 +82,117 @@ fn _parseToken(parser: *Parser, tokenKind: Token.Type, expectedText: ?[]const u8
     return tok;
 }
 
-pub const Math = _12;
-const _12 = union(enum) {
-    plus_op: []_12,
-    times_op: []_12,
-    factorial: struct { _: *_12, factorial: _9 },
-    parens: _10,
-    number: _11,
-};
+pub const File = _4;
+const _4 = []_1;
+const _1 = Decl;
 const _2 = []const u8;
-const _5 = []const u8;
-const _9 = []const u8;
-const _10 = *Parens;
-const _11 = *Number;
-fn _13(parser: *Parser) ParseError!_12 {
+fn _5(parser: *Parser) ParseError!_4 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    var resAL = std.ArrayList(_12).init(parser.alloc);
-    _ = _14(parser) catch |e| switch (e) {
+    var resAL = std.ArrayList(_1).init(parser.alloc);
+    while (true) {
+        // :: parse 1 catch break
+        try resAL.append(_6(parser) catch |e| switch (e) {
+            error.OutOfMemory => return e,
+            error.ParseError => break,
+        });
+        // :: parse 2 catch break
+        _ = _7(parser) catch |e| switch (e) {
+            error.OutOfMemory => return e,
+            error.ParseError => break,
+        };
+    }
+    return resAL.toOwnedSlice();
+}
+fn _6(parser: *Parser) ParseError!_1 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return try parseDecl(parser);
+}
+fn _7(parser: *Parser) ParseError!_2 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, ";")).text;
+}
+pub const parseFile = _5;
+pub const Decl = _15;
+const _15 = struct {
+    name: _11,
+    value: _14,
+};
+const _11 = []const u8;
+const _12 = []const u8;
+const _14 = *Component;
+fn _16(parser: *Parser) ParseError!_15 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    const _18 = try _17(parser);
+    _ = try _19(parser);
+    const _21 = try _20(parser);
+    return _15{
+        .name = _18,
+        .value = _21,
+    };
+}
+fn _17(parser: *Parser) ParseError!_11 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .identifier, null)).text;
+}
+fn _19(parser: *Parser) ParseError!_12 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, "=")).text;
+}
+fn _20(parser: *Parser) ParseError!_14 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    const _22 = try parseComponent(parser);
+    const _23 = try parser.alloc.create(@TypeOf(_22));
+    _23.* = _22;
+    return _23;
+}
+pub const parseDecl = _16;
+pub const Component = _38;
+const _38 = union(enum) {
+    or_op: []_38,
+    p_op: []_38,
+    suffixop: struct { _: *_38, suffixop: _31 },
+    decl_ref: _33,
+    token_ref: _34,
+    parens: _35,
+    string: _36,
+    magic: _37,
+};
+const _26 = []const u8;
+const _31 = *Suffixop;
+const _33 = []const u8;
+const _34 = *TokenRef;
+const _35 = *Parens;
+const _36 = *String;
+const _37 = *Magic;
+fn _39(parser: *Parser) ParseError!_38 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    var resAL = std.ArrayList(_38).init(parser.alloc);
+    _ = _40(parser) catch |e| switch (e) {
         error.OutOfMemory => return e,
         error.ParseError => {},
     }; // optional first joiner
     while (true) {
-        try resAL.append(_15(parser) catch |e| switch (e) {
+        try resAL.append(_41(parser) catch |e| switch (e) {
             error.OutOfMemory => return e,
             error.ParseError => return parser.err("last or disallowed"),
         });
-        _ = _14(parser) catch |e| switch (e) {
+        _ = _40(parser) catch |e| switch (e) {
             error.OutOfMemory => return e,
             error.ParseError => break,
         };
@@ -117,64 +200,82 @@ fn _13(parser: *Parser) ParseError!_12 {
     if (resAL.items.len == 0) return parser.err("no items");
     if (resAL.items.len == 1) return resAL.items[0];
 
-    return _12{ .plus_op = resAL.toOwnedSlice() };
+    return _38{ .or_op = resAL.toOwnedSlice() };
 }
-fn _15(parser: *Parser) ParseError!_12 {
+fn _41(parser: *Parser) ParseError!_38 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
-    var resAL = std.ArrayList(_12).init(parser.alloc);
-    _ = _16(parser) catch |e| switch (e) {
-        error.OutOfMemory => return e,
-        error.ParseError => {},
-    }; // optional first joiner
+    var resAL = std.ArrayList(_38).init(parser.alloc);
+    //_ = _42(parser) catch |e| switch(e) {error.OutOfMemory => return e, error.ParseError => {}}; // optional first joiner
     while (true) {
-        try resAL.append(_17(parser) catch |e| switch (e) {
-            error.OutOfMemory => return e,
-            error.ParseError => return parser.err("last or disallowed"),
-        });
-        _ = _16(parser) catch |e| switch (e) {
+        try resAL.append(_43(parser) catch |e| switch (e) {
             error.OutOfMemory => return e,
             error.ParseError => break,
-        };
+        });
+        //_ = _42(parser) catch |e| switch(e) {error.OutOfMemory => return e, error.ParseError => break};
     }
     if (resAL.items.len == 0) return parser.err("no items");
     if (resAL.items.len == 1) return resAL.items[0];
 
-    return _12{ .times_op = resAL.toOwnedSlice() };
+    return _38{ .p_op = resAL.toOwnedSlice() };
 }
-fn _17(parser: *Parser) ParseError!_12 {
+fn _43(parser: *Parser) ParseError!_38 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
     // 1: parse the structure
-    const resc = try _19(parser);
+    const resc = try _45(parser);
     // 2: parse the suffixop[] and unwrap
     var topUnwrapped = resc;
 
     while (true) {
-        const suffix = _18(parser) catch |e| switch (e) {
+        const suffix = _44(parser) catch |e| switch (e) {
             error.OutOfMemory => return e,
             error.ParseError => break,
         };
         const allocated = try parser.alloc.create(@TypeOf(topUnwrapped));
         allocated.* = topUnwrapped;
-        topUnwrapped = .{ .factorial = .{ ._ = allocated, .factorial = suffix } };
+        topUnwrapped = .{ .suffixop = .{ ._ = allocated, .suffixop = suffix } };
     }
     return topUnwrapped;
 }
-fn _19(parser: *Parser) ParseError!_12 {
+fn _45(parser: *Parser) ParseError!_38 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
     blk: {
-        return _12{
-            .parens = _20(parser) catch |e| switch (e) {
+        return _38{
+            .decl_ref = _46(parser) catch |e| switch (e) {
                 error.OutOfMemory => return e,
                 error.ParseError => break :blk,
             },
         };
     }
     blk: {
-        return _12{
-            .number = _21(parser) catch |e| switch (e) {
+        return _38{
+            .token_ref = _47(parser) catch |e| switch (e) {
+                error.OutOfMemory => return e,
+                error.ParseError => break :blk,
+            },
+        };
+    }
+    blk: {
+        return _38{
+            .parens = _48(parser) catch |e| switch (e) {
+                error.OutOfMemory => return e,
+                error.ParseError => break :blk,
+            },
+        };
+    }
+    blk: {
+        return _38{
+            .string = _49(parser) catch |e| switch (e) {
+                error.OutOfMemory => return e,
+                error.ParseError => break :blk,
+            },
+        };
+    }
+    blk: {
+        return _38{
+            .magic = _50(parser) catch |e| switch (e) {
                 error.OutOfMemory => return e,
                 error.ParseError => break :blk,
             },
@@ -182,89 +283,472 @@ fn _19(parser: *Parser) ParseError!_12 {
     }
     return parser.err("union field not matched f");
 }
-fn _14(parser: *Parser) ParseError!_2 {
+fn _40(parser: *Parser) ParseError!_26 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    return (try _parseToken(parser, .punctuation, "+")).text;
+    return (try _parseToken(parser, .punctuation, "|")).text;
 }
-fn _16(parser: *Parser) ParseError!_5 {
+fn _44(parser: *Parser) ParseError!_31 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    return (try _parseToken(parser, .punctuation, "*")).text;
+    const _51 = try parseSuffixop(parser);
+    const _52 = try parser.alloc.create(@TypeOf(_51));
+    _52.* = _51;
+    return _52;
 }
-fn _18(parser: *Parser) ParseError!_9 {
+fn _46(parser: *Parser) ParseError!_33 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    return (try _parseToken(parser, .punctuation, "!")).text;
+    return (try _parseToken(parser, .identifier, null)).text;
 }
-fn _20(parser: *Parser) ParseError!_10 {
+fn _47(parser: *Parser) ParseError!_34 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    const _22 = try parseParens(parser);
-    const _23 = try parser.alloc.create(@TypeOf(_22));
-    _23.* = _22;
-    return _23;
+    const _53 = try parseTokenRef(parser);
+    const _54 = try parser.alloc.create(@TypeOf(_53));
+    _54.* = _53;
+    return _54;
 }
-fn _21(parser: *Parser) ParseError!_11 {
+fn _48(parser: *Parser) ParseError!_35 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    const _24 = try parseNumber(parser);
-    const _25 = try parser.alloc.create(@TypeOf(_24));
-    _25.* = _24;
-    return _25;
+    const _55 = try parseParens(parser);
+    const _56 = try parser.alloc.create(@TypeOf(_55));
+    _56.* = _55;
+    return _56;
 }
-pub const parseMath = _13;
-pub const Parens = _29;
-const _29 = struct {
-    math: _27,
+fn _49(parser: *Parser) ParseError!_36 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    const _57 = try parseString(parser);
+    const _58 = try parser.alloc.create(@TypeOf(_57));
+    _58.* = _57;
+    return _58;
+}
+fn _50(parser: *Parser) ParseError!_37 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    const _59 = try parseMagic(parser);
+    const _60 = try parser.alloc.create(@TypeOf(_59));
+    _60.* = _59;
+    return _60;
+}
+pub const parseComponent = _39;
+pub const TokenRef = _64;
+const _64 = struct {
+    token: _63,
 };
-const _26 = []const u8;
-const _27 = *Math;
-const _28 = []const u8;
-fn _30(parser: *Parser) ParseError!_29 {
+const _61 = []const u8;
+const _63 = []const u8;
+fn _65(parser: *Parser) ParseError!_64 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    _ = try _31(parser);
-    const _33 = try _32(parser);
-    _ = try _34(parser);
-    return _29{
-        .math = _33,
+    _ = try _66(parser);
+    const _68 = try _67(parser);
+    return _64{
+        .token = _68,
     };
 }
-fn _31(parser: *Parser) ParseError!_26 {
+fn _66(parser: *Parser) ParseError!_61 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, ":")).text;
+}
+fn _67(parser: *Parser) ParseError!_63 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .identifier, null)).text;
+}
+pub const parseTokenRef = _65;
+pub const Parens = _72;
+const _72 = struct {
+    component: _70,
+};
+const _69 = []const u8;
+const _70 = *Component;
+const _71 = []const u8;
+fn _73(parser: *Parser) ParseError!_72 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    _ = try _74(parser);
+    const _76 = try _75(parser);
+    _ = try _77(parser);
+    return _72{
+        .component = _76,
+    };
+}
+fn _74(parser: *Parser) ParseError!_69 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
     return (try _parseToken(parser, .punctuation, "(")).text;
 }
-fn _32(parser: *Parser) ParseError!_27 {
+fn _75(parser: *Parser) ParseError!_70 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    const _35 = try parseMath(parser);
-    const _36 = try parser.alloc.create(@TypeOf(_35));
-    _36.* = _35;
-    return _36;
+    const _78 = try parseComponent(parser);
+    const _79 = try parser.alloc.create(@TypeOf(_78));
+    _79.* = _78;
+    return _79;
 }
-fn _34(parser: *Parser) ParseError!_28 {
+fn _77(parser: *Parser) ParseError!_71 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
     return (try _parseToken(parser, .punctuation, ")")).text;
 }
-pub const parseParens = _30;
-pub const Number = _37;
-const _37 = []const u8;
-fn _38(parser: *Parser) ParseError!_37 {
+pub const parseParens = _73;
+pub const String = _90;
+const _90 = struct {
+    bits: _87,
+};
+const _81 = []const u8;
+const _87 = []_85;
+const _85 = union(enum) {
+    string: _82,
+    escape: _84,
+};
+const _82 = []const u8;
+const _84 = []const u8;
+const _89 = []const u8;
+fn _91(parser: *Parser) ParseError!_90 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    return (try _parseToken(parser, .identifier, "a")).text;
+    _ = try _92(parser);
+    const _94 = try _93(parser);
+    _ = try _95(parser);
+    return _90{
+        .bits = _94,
+    };
 }
-pub const parseNumber = _38;
+fn _92(parser: *Parser) ParseError!_81 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .string_start, null)).text;
+}
+fn _93(parser: *Parser) ParseError!_87 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    var resAL = std.ArrayList(_85).init(parser.alloc);
+    while (true) {
+        // :: parse 1 catch break
+        try resAL.append(_96(parser) catch |e| switch (e) {
+            error.OutOfMemory => return e,
+            error.ParseError => break,
+        });
+        // :: parse 2 catch break
+        //_ = _97(parser) catch |e| switch(e) {error.OutOfMemory => return e, error.ParseError => break};
+    }
+    return resAL.toOwnedSlice();
+}
+fn _96(parser: *Parser) ParseError!_85 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    blk: {
+        return _85{
+            .string = _98(parser) catch |e| switch (e) {
+                error.OutOfMemory => return e,
+                error.ParseError => break :blk,
+            },
+        };
+    }
+    blk: {
+        return _85{
+            .escape = _99(parser) catch |e| switch (e) {
+                error.OutOfMemory => return e,
+                error.ParseError => break :blk,
+            },
+        };
+    }
+    return parser.err("union field not matched f");
+}
+fn _98(parser: *Parser) ParseError!_82 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .string, null)).text;
+}
+fn _99(parser: *Parser) ParseError!_84 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .string_escape, null)).text;
+}
+fn _95(parser: *Parser) ParseError!_89 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .string_end, null)).text;
+}
+pub const parseString = _91;
+pub const Magic = _110;
+const _110 = struct {
+    name: _102,
+    args: _108,
+};
+const _100 = []const u8;
+const _102 = []const u8;
+const _103 = []const u8;
+const _108 = []_105;
+const _105 = Component;
+const _106 = []const u8;
+const _109 = []const u8;
+fn _111(parser: *Parser) ParseError!_110 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    _ = try _112(parser);
+    const _114 = try _113(parser);
+    _ = try _115(parser);
+    const _117 = try _116(parser);
+    _ = try _118(parser);
+    return _110{
+        .name = _114,
+        .args = _117,
+    };
+}
+fn _112(parser: *Parser) ParseError!_100 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, "#")).text;
+}
+fn _113(parser: *Parser) ParseError!_102 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .identifier, null)).text;
+}
+fn _115(parser: *Parser) ParseError!_103 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, "(")).text;
+}
+fn _116(parser: *Parser) ParseError!_108 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    var resAL = std.ArrayList(_105).init(parser.alloc);
+    while (true) {
+        // :: parse 1 catch break
+        try resAL.append(_119(parser) catch |e| switch (e) {
+            error.OutOfMemory => return e,
+            error.ParseError => break,
+        });
+        // :: parse 2 catch break
+        _ = _120(parser) catch |e| switch (e) {
+            error.OutOfMemory => return e,
+            error.ParseError => break,
+        };
+    }
+    return resAL.toOwnedSlice();
+}
+fn _119(parser: *Parser) ParseError!_105 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return try parseComponent(parser);
+}
+fn _120(parser: *Parser) ParseError!_106 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, ",")).text;
+}
+fn _118(parser: *Parser) ParseError!_109 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, ")")).text;
+}
+pub const parseMagic = _111;
+pub const Suffixop = _126;
+const _126 = union(enum) {
+    nameset: _123,
+    array: _124,
+    optional: _125,
+};
+const _123 = *Nameset;
+const _124 = *Array;
+const _125 = *Optional;
+fn _127(parser: *Parser) ParseError!_126 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    blk: {
+        return _126{
+            .nameset = _128(parser) catch |e| switch (e) {
+                error.OutOfMemory => return e,
+                error.ParseError => break :blk,
+            },
+        };
+    }
+    blk: {
+        return _126{
+            .array = _129(parser) catch |e| switch (e) {
+                error.OutOfMemory => return e,
+                error.ParseError => break :blk,
+            },
+        };
+    }
+    blk: {
+        return _126{
+            .optional = _130(parser) catch |e| switch (e) {
+                error.OutOfMemory => return e,
+                error.ParseError => break :blk,
+            },
+        };
+    }
+    return parser.err("union field not matched f");
+}
+fn _128(parser: *Parser) ParseError!_123 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    const _131 = try parseNameset(parser);
+    const _132 = try parser.alloc.create(@TypeOf(_131));
+    _132.* = _131;
+    return _132;
+}
+fn _129(parser: *Parser) ParseError!_124 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    const _133 = try parseArray(parser);
+    const _134 = try parser.alloc.create(@TypeOf(_133));
+    _134.* = _133;
+    return _134;
+}
+fn _130(parser: *Parser) ParseError!_125 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    const _135 = try parseOptional(parser);
+    const _136 = try parser.alloc.create(@TypeOf(_135));
+    _136.* = _135;
+    return _136;
+}
+pub const parseSuffixop = _127;
+pub const Nameset = _142;
+const _142 = struct {
+    name: _140,
+};
+const _137 = []const u8;
+const _140 = ?_138;
+const _138 = []const u8;
+const _141 = []const u8;
+fn _143(parser: *Parser) ParseError!_142 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    _ = try _144(parser);
+    const _146 = try _145(parser);
+    _ = try _147(parser);
+    return _142{
+        .name = _146,
+    };
+}
+fn _144(parser: *Parser) ParseError!_137 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, "<")).text;
+}
+fn _145(parser: *Parser) ParseError!_140 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return _148(parser) catch |e| switch (e) {
+        error.OutOfMemory => return e,
+        error.ParseError => return null, // note that the called function already cancelBit'd so it's ok
+    };
+}
+fn _148(parser: *Parser) ParseError!_138 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .identifier, null)).text;
+}
+fn _147(parser: *Parser) ParseError!_141 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, ">")).text;
+}
+pub const parseNameset = _143;
+pub const Array = _153;
+const _153 = struct {
+    component: _151,
+};
+const _149 = []const u8;
+const _151 = ?_150;
+const _150 = *Component;
+const _152 = []const u8;
+fn _154(parser: *Parser) ParseError!_153 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    _ = try _155(parser);
+    const _157 = try _156(parser);
+    _ = try _158(parser);
+    return _153{
+        .component = _157,
+    };
+}
+fn _155(parser: *Parser) ParseError!_149 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, "[")).text;
+}
+fn _156(parser: *Parser) ParseError!_151 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return _159(parser) catch |e| switch (e) {
+        error.OutOfMemory => return e,
+        error.ParseError => return null, // note that the called function already cancelBit'd so it's ok
+    };
+}
+fn _159(parser: *Parser) ParseError!_150 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    const _160 = try parseComponent(parser);
+    const _161 = try parser.alloc.create(@TypeOf(_160));
+    _161.* = _160;
+    return _161;
+}
+fn _158(parser: *Parser) ParseError!_152 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, "]")).text;
+}
+pub const parseArray = _154;
+pub const Optional = _162;
+const _162 = []const u8;
+fn _163(parser: *Parser) ParseError!_162 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .punctuation, "?")).text;
+}
+pub const parseOptional = _163;
