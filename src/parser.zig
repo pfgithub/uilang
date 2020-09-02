@@ -367,6 +367,9 @@ pub fn parseSuffixop(parser: *Parser) ParseError!Suffixop {
 
 /// parens = '(' component ')';
 pub fn parseParens(parser: *Parser) ParseError!Parens {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
     _ = try parseToken(parser, .punctuation, "(");
     const component = try parseComponent(parser);
     _ = try parseToken(parser, .punctuation, ")");
@@ -377,6 +380,9 @@ pub fn parseParens(parser: *Parser) ParseError!Parens {
 
 /// string = STRING_START<> (STRING | STRING_ESCAPE<escape>)[]<bits> STRING_END<>;
 pub fn parseString(parser: *Parser) ParseError!String {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
     _ = try parseToken(parser, .string_start, null);
     var stringBits = std.ArrayList(String.StringBit).init(parser.arena);
     while (true) {
@@ -389,6 +395,9 @@ pub fn parseString(parser: *Parser) ParseError!String {
 
 /// magic = '#' identifier<name> '(' component[',']<args> ')';
 pub fn parseMagic(parser: *Parser) ParseError!Magic {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
     _ = try parseToken(parser, .punctuation, "#");
 
     const name = parseToken(parser, .identifier, null) catch @panic("hard fail");
@@ -412,6 +421,9 @@ pub fn parseMagic(parser: *Parser) ParseError!Magic {
 
 /// nameset = '<' identifier?<name> '>';
 pub fn parseNameset(parser: *Parser) ParseError!Nameset {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
     _ = try parseToken(parser, .punctuation, "<");
 
     const rv: ?*Identifier = blk: {
@@ -428,6 +440,9 @@ pub fn parseNameset(parser: *Parser) ParseError!Nameset {
 
 /// array = '[' component? ']';
 pub fn parseArray(parser: *Parser) ParseError!Array {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
     _ = try parseToken(parser, .punctuation, "[");
     const component: ?*Component = blk: {
         const component = parseComponent(parser) catch break :blk null;
