@@ -3,7 +3,7 @@ const parser = @import("dist.zig"); // in the future this will be added from bui
 
 test "dist" {
     const code =
-        \\a * a + a * a
+        \\a * a! + a * a!
     ;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);

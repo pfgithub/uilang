@@ -28,6 +28,7 @@ const StructField = struct { field: ?[]const u8, structure: Structure };
 const UnionMagic = union(enum) {
     none: Structure,
     operator: Structure,
+    suffix: Structure,
 };
 const UnionField = struct { field: []const u8, magic: UnionMagic };
 // this needs to store an id or something
@@ -96,6 +97,10 @@ const Structure = struct {
                     switch (val.magic) {
                         .none => |base| try base.print(out),
                         .operator => try out.print("[]_{}", .{structure.typeNameID}),
+                        .suffix => |cse| try out.print(
+                            "struct {{ _: *_{}, {}: _{} }}",
+                            .{ structure.typeNameID, cse.name.?, cse.typeNameID },
+                        ),
                     }
                     try out.writeAll(",\n");
                 }
@@ -105,6 +110,7 @@ const Structure = struct {
                     switch (val.magic) {
                         .none => |base| try base.printDecl(out),
                         .operator => |base| try base.printDecl(out),
+                        .suffix => |base| try base.printDecl(out),
                     }
                 }
             },
@@ -160,7 +166,7 @@ const Structure = struct {
                     // not really
                     switch (structure.kind) {
                         .unattached_magic => |uam| {
-                            const uamName = std.meta.stringToEnum(enum { operator }, uam.name) orelse unreachable; // TODO report error :: invalid magic name
+                            const uamName = std.meta.stringToEnum(enum { operator, suffix }, uam.name) orelse unreachable; // TODO report error :: invalid magic name
                             // uam.name, uam.args
                             switch (uamName) {
                                 .operator => {
@@ -174,6 +180,16 @@ const Structure = struct {
                                     try resFields.append(.{
                                         .field = structure.name.?,
                                         .magic = .{ .operator = uamJoiner },
+                                    });
+                                },
+                                .suffix => {
+                                    if (uam.args.len != 1) unreachable; // TODO report error :: invalid number of args
+                                    const uamSuffix = try createForComponent(alloc, uam.args[0], gen);
+                                    if (uamSuffix.name == null) unreachable; // TODO support unnamed suffixes
+
+                                    try resFields.append(.{
+                                        .field = structure.name.?,
+                                        .magic = .{ .suffix = uamSuffix },
                                     });
                                 },
                             }
@@ -312,14 +328,56 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                             \\    const sb = parser.startBit();
                             \\    errdefer parser.cancelBit(sb);
                             \\
-                        ,
-                            .{
-                                structure.typeNameID,
-                                joinerFnID,
-                                nextFunctionHalf,
-                                value.field,
-                            },
-                        );
+                        , .{ structure.typeNameID, joinerFnID, nextFunctionHalf, value.field });
+                    },
+                    .suffix => |*nost| {
+                        const suffixopFnID = generator.nextID();
+                        try nextCodegens.append(.{ .structure = nost, .fnid = suffixopFnID });
+                        const nextFunctionHalf = generator.nextID();
+
+                        if (false) {
+                            const sb = parser.startBit();
+                            errdefer parser.cancelBit(sb);
+
+                            // 1: parseSingleComponent
+                            const resc = parseComponent__NoSuffix(parser) catch return parser.err("no");
+                            // 2: parse suffixop repeated
+                            var resSuffixes = std.ArrayList(Suffixop).init(parser.arena);
+
+                            while (true) {
+                                try resSuffixes.append(parseSuffixop(parser) catch break);
+                            }
+                            // 3: unwrap
+                            var topUnwrapped = resc;
+                            for (resSuffixes.items) |suffix| {
+                                const allocated = try parser.arena.create(Component);
+                                allocated.* = topUnwrapped;
+                                const allocatedSuffix = try parser.arena.create(Suffixop);
+                                allocatedSuffix.* = suffix;
+                                topUnwrapped = .{ .suffixop = .{ .component = allocated, .suffixop = allocatedSuffix } };
+                            }
+                            return topUnwrapped;
+                        }
+
+                        try out.print(
+                            \\    // 1: parse the structure
+                            \\    const resc = try _{0}(parser);
+                            \\    // 2: parse the suffixop[] and unwrap
+                            \\    var topUnwrapped = resc;
+                            \\
+                            \\    while (true) {{
+                            \\        const suffix = _{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}};
+                            \\        const allocated = try parser.alloc.create(@TypeOf(topUnwrapped));
+                            \\        allocated.* = topUnwrapped;
+                            \\        topUnwrapped = .{{ .{2} = .{{ ._ = allocated, .{3} = suffix }} }};
+                            \\    }}
+                            \\    return topUnwrapped;
+                            \\}}
+                            \\fn _{0}(parser: *Parser) ParseError!_{4} {{
+                            \\    const sb = parser.startBit();
+                            \\    errdefer parser.cancelBit(sb);
+                            \\
+                        , .{ nextFunctionHalf, suffixopFnID, value.field, nost.name.?, structure.typeNameID });
                     },
                 }
             }
@@ -486,9 +544,11 @@ pub fn main() !void {
         \\ math = 
         \\    | #operator("+")<plus_op>
         \\    | #operator("*")<times_op>
+        \\    | #suffix(suffixop)<suffix_op>
         \\    | parens
         \\    | number
         \\ ;
+        \\ suffixop = '!';
         \\ parens = '(' math ')';
         \\ number = 'a';
     ;
