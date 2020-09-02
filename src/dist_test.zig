@@ -3,14 +3,14 @@ const parser = @import("dist.zig"); // in the future this will be added from bui
 
 test "dist" {
     const code =
-        \\hello; hey; hey; hello
+        \\a * a + a * a
     ;
 
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit();
     const alloc = &arena.allocator;
 
-    const parsed = try parser.parse(alloc, code, .File);
+    const parsed = try parser.parse(alloc, code, .Math);
 
-    for (parsed) |v| std.debug.warn("\n\nParsed: {}\n\n", .{v});
+    std.debug.warn("\n\nParsed: {}\n\n", .{parsed});
 }

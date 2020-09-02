@@ -25,10 +25,18 @@ fn writeTypeNameFor(out: anytype, snakecase: []const u8) !void {
 }
 
 const StructField = struct { field: ?[]const u8, structure: Structure };
-const UnionField = struct { field: []const u8, structure: Structure };
+const UnionMagic = union(enum) {
+    none: Structure,
+    operator: Structure,
+};
+const UnionField = struct { field: []const u8, magic: UnionMagic };
 // this needs to store an id or something
 // so printing it can give a type name rather than a type
 const StructureKind = union(enum) {
+    unattached_magic: struct {
+        name: []const u8,
+        args: []parser.Component, // []StructureKind? it seems like []parser.Component may give more control but idk
+    },
     unio: struct {
         values: []UnionField,
     },
@@ -62,6 +70,7 @@ const Structure = struct {
     fn printDecl(structure: Structure, out: anytype) @TypeOf(out).Error!void {
         try out.print("const _{} = ", .{structure.typeNameID});
         switch (structure.kind) {
+            .unattached_magic => unreachable, // TODO report error unattached magic
             .struc => |sct| {
                 try out.writeAll("struct {\n");
                 for (sct.values) |val| {
@@ -84,13 +93,19 @@ const Structure = struct {
                     try out.writeAll("    ");
                     try out.writeAll(val.field);
                     try out.writeAll(": ");
-                    try val.structure.print(out);
+                    switch (val.magic) {
+                        .none => |base| try base.print(out),
+                        .operator => try out.print("[]_{}", .{structure.typeNameID}),
+                    }
                     try out.writeAll(",\n");
                 }
                 try out.writeAll("};\n");
 
                 for (sct.values) |val| {
-                    try val.structure.printDecl(out);
+                    switch (val.magic) {
+                        .none => |base| try base.printDecl(out),
+                        .operator => |base| try base.printDecl(out),
+                    }
                 }
             },
             .pointer => |ptr| {
@@ -134,9 +149,40 @@ const Structure = struct {
 
                 for (or_components) |or_component| {
                     const structure = try createForComponent(alloc, or_component, gen);
+                    // if magic::
+                    // wrap the final union
 
                     if (structure.name == null) unreachable; // TODO report error :: all union fields must be named
-                    try resFields.append(.{ .field = structure.name.?, .structure = structure });
+
+                    // this would be better if(structure.kind.unattached_magic) |uam| but zig will never have that for a few reasons
+                    // maybe it would be better if union and union(enum) weren't so similar. idk. what if enum was union(enum) and union was just for union
+                    // that might even make some things more clear in the language. probably not worth the change idk. it is simpler though maybe not really
+                    // not really
+                    switch (structure.kind) {
+                        .unattached_magic => |uam| {
+                            const uamName = std.meta.stringToEnum(enum { operator }, uam.name) orelse unreachable; // TODO report error :: invalid magic name
+                            // uam.name, uam.args
+                            switch (uamName) {
+                                .operator => {
+                                    // aaa the indentation is too much help pls
+                                    if (uam.args.len != 1) unreachable; // TODO report error :: invalid number of args
+                                    const uamJoiner = try createForComponent(alloc, uam.args[0], gen);
+                                    if (uamJoiner.name != null) unreachable; // TODO support named operators
+                                    // ok so structure is actually = to []ThisUnion
+                                    // which is weird
+                                    // maybe it should have no structure then
+                                    try resFields.append(.{
+                                        .field = structure.name.?,
+                                        .magic = .{ .operator = uamJoiner },
+                                    });
+                                },
+                            }
+                        },
+                        else => try resFields.append(.{
+                            .field = structure.name.?,
+                            .magic = .{ .none = structure },
+                        }),
+                    }
                 }
 
                 return Structure.init(gen, null, .{ .unio = .{ .values = resFields.toOwnedSlice() } });
@@ -153,12 +199,14 @@ const Structure = struct {
                 return Structure.init(gen, null, .{ .struc = .{ .values = resFields.toOwnedSlice() } });
             },
             .decl_ref => |dr| return Structure.init(gen, dr.name, .{ .pointer = dr.name }),
-            .parens => unreachable, // TODO
+            .parens => |pr| return createForComponent(alloc, pr.component.*, gen),
             .string => |str| {
                 const expctdTkn = try parseString(alloc, str.*);
                 return Structure.init(gen, null, .{ .token = expctdTkn });
             },
-            .magic => unreachable, // TODO
+            .magic => |magic| return Structure.init(gen, null, .{
+                .unattached_magic = .{ .name = magic.name.name, .args = magic.args },
+            }),
             .suffixop => |sfxop| {
                 const structure = try createForComponent(alloc, sfxop.component.*, gen);
                 switch (sfxop.suffixop.*) {
@@ -220,21 +268,62 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
     var nextCodegens = std.ArrayList(struct { structure: *Structure, fnid: usize }).init(alloc);
 
     switch (structure.kind) {
+        .unattached_magic => unreachable, // TODO report error unattached magic
         .unio => |unio| {
             for (unio.values) |*value| {
-                const fnid = generator.nextID();
-                try nextCodegens.append(.{ .structure = &value.structure, .fnid = fnid });
+                switch (value.magic) {
+                    .none => |*nost| {
+                        const fnid = generator.nextID();
+                        try nextCodegens.append(.{ .structure = nost, .fnid = fnid });
 
-                try out.print(
-                    \\    blk: {{
-                    \\        return _{}{{ .{} = _{}(parser) catch break :blk }};
-                    \\    }}
-                ,
-                    .{ structure.typeNameID, value.field, fnid },
-                );
+                        try out.print(
+                            \\    blk: {{
+                            \\        return _{}{{ .{} = _{}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break :blk}} }};
+                            \\    }}
+                        ,
+                            .{ structure.typeNameID, value.field, fnid },
+                        );
+                    },
+                    .operator => |*nost| {
+                        const joinerFnID = generator.nextID();
+                        try nextCodegens.append(.{ .structure = nost, .fnid = joinerFnID });
+                        const nextFunctionHalf = generator.nextID();
+
+                        // imagine: automatically detect
+                        // a = a '+' a | number
+                        // that would be doable but bad idk
+                        // anyway it would mean a would actually refer to the remainder of the union
+                        // but with how this is currently programmed, that would be a mess
+
+                        // oh my. is there a way to have named fields?
+                        try out.print(
+                            \\    var resAL = std.ArrayList(_{0}).init(parser.alloc);
+                            \\    _ = _{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => {{}}}}; // optional first joiner
+                            \\    while (true) {{
+                            \\        try resAL.append(_{2}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => return parser.err("last or disallowed")}});
+                            \\        _ = _{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}};
+                            \\    }}
+                            \\    if (resAL.items.len == 0) return parser.err("no items");
+                            \\    if (resAL.items.len == 1) return resAL.items[0];
+                            \\
+                            \\    return _{0}{{ .{3} = resAL.toOwnedSlice() }};
+                            \\}}
+                            \\fn _{2}(parser: *Parser) ParseError!_{0} {{
+                            \\    const sb = parser.startBit();
+                            \\    errdefer parser.cancelBit(sb);
+                            \\
+                        ,
+                            .{
+                                structure.typeNameID,
+                                joinerFnID,
+                                nextFunctionHalf,
+                                value.field,
+                            },
+                        );
+                    },
+                }
             }
-
-            try out.writeAll("    return parser.err(\"union field not matched f\");");
+            try out.writeAll("\n    return parser.err(\"union field not matched f\");");
         },
         .struc => |struc| {
             var resMap = std.ArrayList(struct { name: []const u8, id: usize }).init(alloc);
@@ -394,8 +483,14 @@ pub const Generator = struct {
 
 pub fn main() !void {
     const code =
-        \\ file = decl[';']<decls>;
-        \\ decl = "hello"<hello> | "hey"<hey>;
+        \\ math = 
+        \\    | #operator("+")<plus_op>
+        \\    | #operator("*")<times_op>
+        \\    | parens
+        \\    | number
+        \\ ;
+        \\ parens = '(' math ')';
+        \\ number = 'a';
     ;
 
     var gpalloc = std.heap.GeneralPurposeAllocator(.{}){};

@@ -8,9 +8,13 @@ const ___ = @This();
 fn __aToString(comptime a: anytype) []const u8 {
     return @tagName(a); // todo support strings too
 }
-pub fn parse(alloc: *Alloc, code: []const u8, comptime a: anytype) !@field(___, __aToString(a)) {
+fn GetResType(comptime aname: []const u8) type {
+    if (!@hasDecl(___, aname)) @compileError("unknown type " ++ aname);
+    return @field(___, aname);
+}
+pub fn parse(alloc: *Alloc, code: []const u8, comptime a: anytype) !GetResType(__aToString(a)) {
     const aname = comptime __aToString(a);
-    const ResType = @field(___, aname);
+    const ResType = GetResType(aname);
     const resfn = @field(___, "parse" ++ aname);
 
     var parser = Parser.init(alloc, code);
