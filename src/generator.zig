@@ -137,8 +137,8 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
     try out.print("fn parse_{} () ParseError!_{}", .{ fnName, structure.typeNameID });
     try out.writeAll(" {\n");
     try out.writeAll(
-        \\ const sb = parser.startBit();
-        \\ errdefer parser.cancelBit(sb);
+        \\    const sb = parser.startBit();
+        \\    errdefer parser.cancelBit(sb);
         \\
     );
 
@@ -151,28 +151,38 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                 const fnid = generator.nextID();
                 if (value.field) |nme| {
                     const id = generator.nextID();
-                    try out.print("const _{} = ", .{id});
+                    try out.print("    const _{} = ", .{id});
                     try resMap.append(.{ .name = nme, .id = id });
-                } else try out.print("_ = ", .{});
-                try out.print("try parse_{}(parser);\n", .{fnid});
+                } else try out.print("    _ = ", .{});
+                try out.print("    try parse_{}(parser);\n", .{fnid});
 
                 try nextCodegens.append(.{ .structure = &value.structure, .fnid = fnid });
             }
 
-            try out.writeAll("return ");
+            try out.writeAll("    return ");
             try structure.print(out);
             try out.writeAll("{\n");
             for (resMap.items) |rv| {
-                try out.print(".{} = _{},\n", .{ rv.name, rv.id });
+                try out.print("        .{} = _{},\n", .{ rv.name, rv.id });
             }
-            try out.writeAll("};");
+            try out.writeAll("    };\n");
 
             // add .{value.structure, generator.nextID()} to the arraylist of codegens to do next
         },
-        else => try out.print("@compileError(\"TODO: {}\");", .{std.meta.tagName(structure.kind)}),
+        .pointer => |itmnme| {
+            const resultid = generator.nextID();
+            const allocid = generator.nextID();
+            try out.print("    const _{} = try parse", .{resultid});
+            try writeTypeNameFor(out, itmnme);
+            try out.writeAll("(parser);\n");
+            try out.print("    const _{} = try parser.alloc.create(@TypeOf(_{}));\n", .{ resultid, allocid });
+            try out.print("    _{}.* = _{};\n", .{ allocid, resultid });
+            try out.print("    return _{};\n", .{allocid});
+        },
+        else => try out.print("    @compileError(\"TODO: {}\");\n", .{std.meta.tagName(structure.kind)}),
     }
     try out.writeAll(
-        \\ }
+        \\}
         \\
     );
 

@@ -1,38 +1,3 @@
-// example of a function parsing a .pointer
-fn _0(parser: *Parser) ParseError!*Hello {
-    const _6 = try parseHello(parser);
-    const _7 = try parser.alloc.create(@TypeOf(_6));
-    _7.* = _6;
-    return _7;
-}
-
-// example of a function parsing a .optional
-fn _1(parser: *Parser) ParseError!?*World {
-    return _5() catch |e| switch (e) {
-        error.OutOfMemory => return e,
-        error.ParseError => return null,
-    };
-}
-
-// example of a function parsing a .pointer
-fn _5(parser: *Parser) ParseError!*World {
-    const _8 = try parseHello(parser);
-    const _9 = try parser.alloc.create(@TypeOf(_8));
-    _9.* = _8;
-    return _9;
-}
-
-// example of a function parsing a .struc
-pub fn parseX(parser: *Parser) ParseError!X {
-    const sb = parser.startBit();
-    errdefer parser.cancelBit(sb);
-
-    const _2 = try _0(parser);
-    const _3 = try _1(parser);
-
-    return Parens{ .component = allocatedComponent };
-}
-
 pub const Main = _3;
 const _3 = struct {
     hello: _0,
@@ -54,7 +19,10 @@ fn parse_4() ParseError!_3 {
 fn parse_5() ParseError!_0 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
-    @compileError("TODO: pointer");
+    const _9 = try parseHello(parser);
+    const _9 = try parser.alloc.create(@TypeOf(_10));
+    _10.* = _9;
+    return _10;
 }
 fn parse_7() ParseError!_2 {
     const sb = parser.startBit();
@@ -62,19 +30,19 @@ fn parse_7() ParseError!_2 {
     @compileError("TODO: optional");
 }
 pub const parseMain = _4;
-pub const Hello = _9;
-const _9 = []const u8;
-fn parse_10() ParseError!_9 {
-    const sb = parser.startBit();
-    errdefer parser.cancelBit(sb);
-    @compileError("TODO: token");
-}
-pub const parseHello = _10;
-pub const World = _11;
+pub const Hello = _11;
 const _11 = []const u8;
 fn parse_12() ParseError!_11 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
     @compileError("TODO: token");
 }
-pub const parseWorld = _12;
+pub const parseHello = _12;
+pub const World = _13;
+const _13 = []const u8;
+fn parse_14() ParseError!_13 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+    @compileError("TODO: token");
+}
+pub const parseWorld = _14;
