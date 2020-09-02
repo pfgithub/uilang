@@ -78,51 +78,48 @@ fn _parseToken(parser: *Parser, tokenKind: Token.Type, expectedText: ?[]const u8
     return tok;
 }
 
-pub const File = _3;
-const _3 = []_0;
-const _0 = *Decl;
+pub const File = _4;
+const _4 = []_2;
+const _2 = Decl;
 const _1 = []const u8;
-fn _4(parser: *Parser) ParseError!_3 {
+fn _5(parser: *Parser) ParseError!_4 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    var resAL = std.ArrayList(_0).init(parser.alloc);
+    var resAL = std.ArrayList(_2).init(parser.alloc);
     while (true) {
         // :: parse 1 catch break
-        try resAL.append(_5(parser) catch |e| switch (e) {
+        try resAL.append(_6(parser) catch |e| switch (e) {
             error.OutOfMemory => return e,
             error.ParseError => break,
         });
         // :: parse 2 catch break
-        _ = _6(parser) catch |e| switch (e) {
+        _ = _7(parser) catch |e| switch (e) {
             error.OutOfMemory => return e,
             error.ParseError => break,
         };
     }
     return resAL.toOwnedSlice();
 }
-fn _5(parser: *Parser) ParseError!_0 {
+fn _6(parser: *Parser) ParseError!_2 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    const _7 = try parseDecl(parser);
-    const _8 = try parser.alloc.create(@TypeOf(_7));
-    _8.* = _7;
-    return _8;
+    return try parseDecl(parser);
 }
-fn _6(parser: *Parser) ParseError!_1 {
+fn _7(parser: *Parser) ParseError!_1 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
     return (try _parseToken(parser, .punctuation, ";")).text;
 }
-pub const parseFile = _4;
-pub const Decl = _9;
-const _9 = []const u8;
-fn _10(parser: *Parser) ParseError!_9 {
+pub const parseFile = _5;
+pub const Decl = _10;
+const _10 = []const u8;
+fn _11(parser: *Parser) ParseError!_10 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
     return (try _parseToken(parser, .identifier, "oi")).text;
 }
-pub const parseDecl = _10;
+pub const parseDecl = _11;

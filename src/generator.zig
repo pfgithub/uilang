@@ -33,6 +33,9 @@ const StructureKind = union(enum) {
         // if values.len == 0, print struct {__: u1 = 0}
     },
     pointer: []const u8,
+    // value is like pointer but no *
+    // should pointer be made more generic and be pointer: *StructureKind? that might make sense
+    value: []const u8,
     token: []const u8,
     optional: *Structure,
     array_only: struct {
@@ -80,6 +83,10 @@ const Structure = struct {
             .pointer => |ptr| {
                 try out.writeAll("*");
                 try writeTypeNameFor(out, ptr);
+                try out.writeAll(";\n");
+            },
+            .value => |valu| {
+                try writeTypeNameFor(out, valu);
                 try out.writeAll(";\n");
             },
             .token => try out.writeAll("[]const u8;\n"),
@@ -140,7 +147,10 @@ const Structure = struct {
                         if (ary.component == null) unreachable; // TODO support arrays without joiners
                         const joiner = try createForComponent(alloc, ary.component.?.*, gen);
                         if (joiner.name != null) unreachable; // TODO support named joiners
-                        const allocatedStructure = try allocDupe(alloc, structure);
+                        const allocatedStructure = switch (structure.kind) {
+                            .pointer => |pname| try allocDupe(alloc, Structure.init(gen, structure.name, .{ .value = pname })),
+                            else => try allocDupe(alloc, structure),
+                        };
                         const allocatedJoiner = try allocDupe(alloc, joiner);
                         return Structure.init(gen, null, .{ .array_only = .{ .item = allocatedStructure, .joiner = allocatedJoiner } });
                     },
@@ -223,6 +233,13 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
             try out.print("    const _{} = try parser.alloc.create(@TypeOf(_{}));\n", .{ allocid, resultid });
             try out.print("    _{}.* = _{};\n", .{ allocid, resultid });
             try out.print("    return _{};\n", .{allocid});
+        },
+        .value => |itmnme| {
+            const resultid = generator.nextID();
+            const allocid = generator.nextID();
+            try out.print("    return try parse", .{});
+            try writeTypeNameFor(out, itmnme);
+            try out.writeAll("(parser);\n");
         },
         .optional => |v| {
             const fnid = generator.nextID();
