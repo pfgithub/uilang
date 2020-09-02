@@ -1,7 +1,7 @@
 const std = @import("std");
 const Alloc = std.mem.Allocator;
 const ast = @import("ast.zig");
-const parser = @import("dist.zig");
+const parser = @import("parser.zig");
 
 const OOM = error{OutOfMemory};
 
