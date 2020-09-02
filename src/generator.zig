@@ -105,7 +105,6 @@ const Structure = struct {
                 for (p_components) |p_component| {
                     const structure = try createForComponent(alloc, p_component, gen);
 
-                    if (structure.name == null) continue; // unnamed results are not stored.
                     try resFields.append(.{ .field = structure.name, .structure = structure });
                 }
 
@@ -299,9 +298,8 @@ pub const Generator = struct {
 
 pub fn main() !void {
     const code =
-        \\ main = hello world?;
+        \\ main = hello "world"?;
         \\ hello = "hello";
-        \\ world = "world";
     ;
 
     var gpalloc = std.heap.GeneralPurposeAllocator(.{}){};
