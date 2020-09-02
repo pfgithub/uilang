@@ -114,12 +114,35 @@ fn _7(parser: *Parser) ParseError!_1 {
     return (try _parseToken(parser, .punctuation, ";")).text;
 }
 pub const parseFile = _5;
-pub const Decl = _10;
-const _10 = []const u8;
-fn _11(parser: *Parser) ParseError!_10 {
+pub const Decl = _14;
+const _14 = union(enum) {
+    hello: _11,
+    hey: _13,
+};
+const _11 = []const u8;
+const _13 = []const u8;
+fn _15(parser: *Parser) ParseError!_14 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 
-    return (try _parseToken(parser, .identifier, "oi")).text;
+    blk: {
+        return _14{ .hello = _16(parser) catch break :blk };
+    }
+    blk: {
+        return _14{ .hey = _17(parser) catch break :blk };
+    }
+    return parser.err("union field not matched f");
 }
-pub const parseDecl = _11;
+fn _16(parser: *Parser) ParseError!_11 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .identifier, "hello")).text;
+}
+fn _17(parser: *Parser) ParseError!_13 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    return (try _parseToken(parser, .identifier, "hey")).text;
+}
+pub const parseDecl = _15;

@@ -25,16 +25,18 @@ fn writeTypeNameFor(out: anytype, snakecase: []const u8) !void {
 }
 
 const StructField = struct { field: ?[]const u8, structure: Structure };
+const UnionField = struct { field: []const u8, structure: Structure };
 // this needs to store an id or something
 // so printing it can give a type name rather than a type
 const StructureKind = union(enum) {
+    unio: struct {
+        values: []UnionField,
+    },
     struc: struct {
         values: []StructField,
         // if values.len == 0, print struct {__: u1 = 0}
     },
-    pointer: []const u8,
-    // value is like pointer but no *
-    // should pointer be made more generic and be pointer: *StructureKind? that might make sense
+    pointer: []const u8, // TODO maybe: make this *StructureKind.
     value: []const u8,
     token: []const u8,
     optional: *Structure,
@@ -70,10 +72,21 @@ const Structure = struct {
                     try val.structure.print(out);
                     try out.writeAll(",\n");
                 }
+                try out.writeAll("};\n");
 
-                // try out.writeAll("const parse = parse");
-                // try writeTypeNameFor();
-                // try out.writeAll(";");
+                for (sct.values) |val| {
+                    try val.structure.printDecl(out);
+                }
+            },
+            .unio => |sct| {
+                try out.writeAll("union(enum) {\n");
+                for (sct.values) |val| {
+                    try out.writeAll("    ");
+                    try out.writeAll(val.field);
+                    try out.writeAll(": ");
+                    try val.structure.print(out);
+                    try out.writeAll(",\n");
+                }
                 try out.writeAll("};\n");
 
                 for (sct.values) |val| {
@@ -116,12 +129,19 @@ const Structure = struct {
     }
     fn createForComponent(alloc: *Alloc, component: parser.Component, gen: *Generator) OOM!Structure {
         switch (component) {
-            .or_op => unreachable, // TODO make a union
+            .or_op => |or_components| {
+                var resFields = std.ArrayList(UnionField).init(alloc);
+
+                for (or_components) |or_component| {
+                    const structure = try createForComponent(alloc, or_component, gen);
+
+                    if (structure.name == null) unreachable; // TODO report error :: all union fields must be named
+                    try resFields.append(.{ .field = structure.name.?, .structure = structure });
+                }
+
+                return Structure.init(gen, null, .{ .unio = .{ .values = resFields.toOwnedSlice() } });
+            },
             .p_op => |p_components| {
-                // create component structures for each item
-                // store any named structures into a struct
-                // return the struct of named structures only
-                // unnamed structures are ignored.
                 var resFields = std.ArrayList(StructField).init(alloc);
 
                 for (p_components) |p_component| {
@@ -200,6 +220,22 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
     var nextCodegens = std.ArrayList(struct { structure: *Structure, fnid: usize }).init(alloc);
 
     switch (structure.kind) {
+        .unio => |unio| {
+            for (unio.values) |*value| {
+                const fnid = generator.nextID();
+                try nextCodegens.append(.{ .structure = &value.structure, .fnid = fnid });
+
+                try out.print(
+                    \\    blk: {{
+                    \\        return _{}{{ .{} = _{}(parser) catch break :blk }};
+                    \\    }}
+                ,
+                    .{ structure.typeNameID, value.field, fnid },
+                );
+            }
+
+            try out.writeAll("    return parser.err(\"union field not matched f\");");
+        },
         .struc => |struc| {
             var resMap = std.ArrayList(struct { name: []const u8, id: usize }).init(alloc);
             for (struc.values) |*value| {
@@ -221,8 +257,6 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                 try out.print("        .{} = _{},\n", .{ rv.name, rv.id });
             }
             try out.writeAll("    };\n");
-
-            // add .{value.structure, generator.nextID()} to the arraylist of codegens to do next
         },
         .pointer => |itmnme| {
             const resultid = generator.nextID();
@@ -361,7 +395,7 @@ pub const Generator = struct {
 pub fn main() !void {
     const code =
         \\ file = decl[';']<decls>;
-        \\ decl = "oi";
+        \\ decl = "hello"<hello> | "hey"<hey>;
     ;
 
     var gpalloc = std.heap.GeneralPurposeAllocator(.{}){};
