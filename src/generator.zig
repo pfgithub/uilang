@@ -544,11 +544,10 @@ pub fn main() !void {
         \\ math = 
         \\    | #operator("+")<plus_op>
         \\    | #operator("*")<times_op>
-        \\    | #suffix(suffixop)<suffix_op>
+        \\    | #suffix('!'<factorial>)<factorial>
         \\    | parens
         \\    | number
         \\ ;
-        \\ suffixop = '!';
         \\ parens = '(' math ')';
         \\ number = 'a';
     ;
