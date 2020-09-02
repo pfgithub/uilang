@@ -34,7 +34,7 @@ const StructureKind = union(enum) {
         // if values.len == 0, print struct {__: u1 = 0}
     },
     pointer: []const u8,
-    token, // TODO token needs to be like []const u8 or smthn
+    token: []const u8,
     optional: *Structure,
 };
 const Structure = struct {
@@ -111,7 +111,10 @@ const Structure = struct {
             },
             .decl_ref => |dr| return Structure.init(gen, dr.name, .{ .pointer = dr.name }),
             .parens => unreachable, // TODO
-            .string => |str| return Structure.init(gen, null, .token),
+            .string => |str| {
+                const expctdTkn = try parseString(alloc, str.*);
+                return Structure.init(gen, null, .{ .token = expctdTkn });
+            },
             .magic => unreachable, // TODO
             .suffixop => |sfxop| {
                 const structure = try createForComponent(alloc, sfxop.component.*, gen);
@@ -130,6 +133,17 @@ const Structure = struct {
     }
 };
 
+fn parseString(alloc: *Alloc, string: parser.String) ![]const u8 {
+    var res = std.ArrayList(u8).init(alloc);
+    for (string.bits) |sb| {
+        switch (sb) {
+            .string => |str| try res.appendSlice(str),
+            .escape => unreachable, // TODO
+        }
+    }
+    return res.toOwnedSlice();
+}
+
 // should each thing make its own parse fn?
 // fn parse__25() ParseError!void { return try parseToken("(")}
 pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Structure, out: anytype, myid: usize) (@TypeOf(out).Error || OOM)!void {
@@ -140,6 +154,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
         \\    const sb = parser.startBit();
         \\    errdefer parser.cancelBit(sb);
         \\
+        \\
     );
 
     var nextCodegens = std.ArrayList(struct { structure: *Structure, fnid: usize }).init(alloc);
@@ -149,14 +164,14 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
             var resMap = std.ArrayList(struct { name: []const u8, id: usize }).init(alloc);
             for (struc.values) |*value| {
                 const fnid = generator.nextID();
+                try nextCodegens.append(.{ .structure = &value.structure, .fnid = fnid });
+
                 if (value.field) |nme| {
                     const id = generator.nextID();
                     try out.print("    const _{} = ", .{id});
                     try resMap.append(.{ .name = nme, .id = id });
                 } else try out.print("    _ = ", .{});
-                try out.print("    try parse_{}(parser);\n", .{fnid});
-
-                try nextCodegens.append(.{ .structure = &value.structure, .fnid = fnid });
+                try out.print("try parse_{}(parser);\n", .{fnid});
             }
 
             try out.writeAll("    return ");
@@ -179,6 +194,25 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
             try out.print("    _{}.* = _{};\n", .{ allocid, resultid });
             try out.print("    return _{};\n", .{allocid});
         },
+        .optional => |v| {
+            const fnid = generator.nextID();
+            try nextCodegens.append(.{ .structure = v, .fnid = fnid });
+
+            try out.print("    return _{}(parser)", .{fnid});
+            try out.writeAll(
+                \\ catch |e| switch (e) {
+                \\        error.OutOfMemory => return e,
+                \\        error.ParseError => return null, // note that the called function already cancelBit'd so it's ok
+                \\    };
+                \\
+            );
+        },
+        .token => |tktxt| {
+            const kind: enum { punctuation, identifier } = .punctuation;
+            try out.print("    return try parseToken(parser, .{}, ", .{std.meta.tagName(kind)});
+            try printZigString(tktxt, out);
+            try out.writeAll(");\n");
+        },
         else => try out.print("    @compileError(\"TODO: {}\");\n", .{std.meta.tagName(structure.kind)}),
     }
     try out.writeAll(
@@ -189,6 +223,16 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
     for (nextCodegens.items) |cdgen| {
         try codegenForStructure(alloc, generator, cdgen.structure.*, out, cdgen.fnid);
     }
+}
+
+pub fn printZigString(str: []const u8, out: anytype) !void {
+    try out.writeByte('"');
+    for (str) |char| switch (char) {
+        ' '...'~' => try out.writeByte(char),
+        '\n' => try out.writeAll("\\n"),
+        else => try out.print("\\x{x:0<2}", .{char}),
+    };
+    try out.writeByte('"');
 }
 
 pub const Generator = struct {

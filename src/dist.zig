@@ -9,6 +9,7 @@ const _1 = *World;
 fn parse_4() ParseError!_3 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
+
     const _6 = try parse_5(parser);
     const _8 = try parse_7(parser);
     return _3{
@@ -19,6 +20,7 @@ fn parse_4() ParseError!_3 {
 fn parse_5() ParseError!_0 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
+
     const _9 = try parseHello(parser);
     const _9 = try parser.alloc.create(@TypeOf(_10));
     _10.* = _9;
@@ -27,22 +29,37 @@ fn parse_5() ParseError!_0 {
 fn parse_7() ParseError!_2 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
-    @compileError("TODO: optional");
+
+    return _11(parser) catch |e| switch (e) {
+        error.OutOfMemory => return e,
+        error.ParseError => return null, // note that the called function already cancelBit'd so it's ok
+    };
+}
+fn parse_11() ParseError!_1 {
+    const sb = parser.startBit();
+    errdefer parser.cancelBit(sb);
+
+    const _12 = try parseWorld(parser);
+    const _12 = try parser.alloc.create(@TypeOf(_13));
+    _13.* = _12;
+    return _13;
 }
 pub const parseMain = _4;
-pub const Hello = _11;
-const _11 = []const u8;
-fn parse_12() ParseError!_11 {
+pub const Hello = _14;
+const _14 = []const u8;
+fn parse_15() ParseError!_14 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
-    @compileError("TODO: token");
+
+    return try parseToken(parser, .punctuation, "hello");
 }
-pub const parseHello = _12;
-pub const World = _13;
-const _13 = []const u8;
-fn parse_14() ParseError!_13 {
+pub const parseHello = _15;
+pub const World = _16;
+const _16 = []const u8;
+fn parse_17() ParseError!_16 {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
-    @compileError("TODO: token");
+
+    return try parseToken(parser, .punctuation, "world");
 }
-pub const parseWorld = _14;
+pub const parseWorld = _17;
