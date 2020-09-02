@@ -1,7 +1,7 @@
 const std = @import("std");
 const Alloc = std.mem.Allocator;
 const ast = @import("ast.zig");
-const parser = @import("parser.zig");
+const parser = @import("dist.zig");
 
 const OOM = error{OutOfMemory};
 
@@ -218,7 +218,7 @@ const Structure = struct {
 
                 return Structure.init(gen, null, .{ .struc = .{ .values = resFields.toOwnedSlice() } });
             },
-            .decl_ref => |dr| return Structure.init(gen, dr.name, .{ .pointer = dr.name }),
+            .decl_ref => |dr| return Structure.init(gen, dr, .{ .pointer = dr }),
             .parens => |pr| return createForComponent(alloc, pr.component.*, gen),
             .string => |str| {
                 const expctdTkn = try parseString(alloc, str.*);
@@ -228,12 +228,12 @@ const Structure = struct {
                 return Structure.init(gen, token.token, .{ .token = .{ .kind = token.token, .expected = null } });
             },
             .magic => |magic| return Structure.init(gen, null, .{
-                .unattached_magic = .{ .name = magic.name.name, .args = magic.args },
+                .unattached_magic = .{ .name = magic.name, .args = magic.args },
             }),
             .suffixop => |sfxop| {
-                const structure = try createForComponent(alloc, sfxop.component.*, gen);
+                const structure = try createForComponent(alloc, sfxop._.*, gen);
                 switch (sfxop.suffixop.*) {
-                    .nameset => |ns| return Structure.init(gen, if (ns.name) |q| q.name else null, structure.kind),
+                    .nameset => |ns| return Structure.init(gen, ns.name, structure.kind),
                     .array => |ary| {
                         const allocatedStructure = switch (structure.kind) {
                             .pointer => |pname| try allocDupe(alloc, Structure.init(gen, structure.name, .{ .value = pname })),
@@ -522,13 +522,7 @@ pub const Generator = struct {
     }
 
     pub fn parse(alloc: *Alloc, code: []const u8, out: anytype) !void {
-        var parserr = parser.Parser.init(alloc, code);
-        defer parserr.deinit();
-
-        const file = try parser.parseFile(&parserr);
-        if ((try parserr.nextToken())) |tok| {
-            std.debug.panic("Remaining token: {}\n", .{tok});
-        }
+        const file_decls = try parser.parse(alloc, code, .File);
 
         const os = std.io.getStdOut().outStream();
 
@@ -542,7 +536,7 @@ pub const Generator = struct {
 
         var gen = Generator{ .alloc = alloc };
 
-        for (file.decls) |decl| {
+        for (file_decls) |decl| {
             // create a structure for decl.value
             // decl.value
             const structure = try Structure.createForComponent(alloc, decl.value.*, &gen);
