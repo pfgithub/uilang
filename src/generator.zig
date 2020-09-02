@@ -44,6 +44,13 @@ const Structure = struct {
     fn print(structure: Structure, out: anytype) @TypeOf(out).Error!void {
         try out.print("_{}", .{structure.typeNameID});
     }
+    // what if we still recursively printed but we made it generate multiple decls
+    // so eg: const DeclName = struct {hello: *Hello}
+    // const _0 = DeclName;
+    // const _1 = DeclName::hello::optionalunwrap ok yeah uuh
+    // that could be neat right?
+    // and then printDecl is for the top level and has an arg for DeclName
+    // or maybe generate a _template_DeclName which can be looked at by humans
     fn printDecl(structure: Structure, out: anytype) @TypeOf(out).Error!void {
         try out.print("const _{} = ", .{structure.typeNameID});
         switch (structure.kind) {
