@@ -25,22 +25,38 @@ pub fn build(b: *Builder) void {
 
     const mode = b.standardReleaseOptions();
 
-    const exe = b.addExecutable("dist_test", "src/parser_generator_test.zig");
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
-    addParser("src/parser_generator/resyn.resyn", "resyn_parser", exe, b);
+    {
+        const exe = b.addExecutable("dist_test", "src/parser_generator_test.zig");
+        exe.setTarget(target);
+        exe.setBuildMode(mode);
+        addParser("src/parser_generator/resyn.resyn", "resyn_parser", exe, b);
+        exe.install();
 
-    const run_cmd = exe.run();
-    run_cmd.step.dependOn(&exe.step);
+        const run_cmd = exe.run();
+        run_cmd.step.dependOn(&exe.install_step.?.step);
 
-    const run_step = b.step("test-parser-generator", "Test the parser generator");
-    run_step.dependOn(&run_cmd.step);
+        const run_step = b.step("test-parser-generator", "Test the parser generator");
+        run_step.dependOn(&run_cmd.step);
+    }
 
-    const pg = b.addExecutable("parser_generator", "src/parser_generator.zig");
-    pg.setTarget(target);
-    pg.setBuildMode(mode);
-    pg.install();
+    {
+        const pg = b.addExecutable("parser_generator", "src/parser_generator.zig");
+        pg.setTarget(target);
+        pg.setBuildMode(mode);
+        pg.install();
 
-    const pg_step = b.step("parser-generator", "Build the parser_generator");
-    pg_step.dependOn(&pg.install_step.?.step);
+        const pg_step = b.step("parser-generator", "Build the parser_generator");
+        pg_step.dependOn(&pg.install_step.?.step);
+    }
+
+    {
+        const uil = b.addExecutable("uilang", "src/uilang.zig");
+        uil.setTarget(target);
+        uil.setBuildMode(mode);
+        addParser("src/uilang.resyn", "uilang_parser", uil, b);
+        uil.install();
+
+        const pg_step = b.step("uilang", "Build the uilang");
+        pg_step.dependOn(&uil.install_step.?.step);
+    }
 }

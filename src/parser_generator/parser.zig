@@ -12,7 +12,7 @@ const State = enum {
 };
 // why not just a union of name: []const u8?
 pub const Token = struct {
-    pub const Type = enum {
+    pub const TokenType = enum {
         identifier,
         string_start,
         string,
@@ -20,7 +20,7 @@ pub const Token = struct {
         string_end,
         punctuation,
     };
-    kind: Type,
+    kind: TokenType,
     text: []const u8,
 };
 pub const Tokenizer = struct {
@@ -43,7 +43,7 @@ pub const Tokenizer = struct {
         defer tkr.current += 1;
         return tkr.peek();
     }
-    fn token(tkr: *Tokenizer, start: usize, ttype: Token.Type) Token {
+    fn token(tkr: *Tokenizer, start: usize, ttype: Token.TokenType) Token {
         return .{
             .kind = ttype,
             .text = tkr.text[start..tkr.current],
@@ -207,7 +207,7 @@ pub const ParseError = error{
     ParseError,
 };
 
-fn _parseToken(parser: *Parser, tokenKind: Token.Type, expectedText: ?[]const u8) ParseError!Token {
+fn _parseToken(parser: *Parser, tokenKind: Token.TokenType, expectedText: ?[]const u8) ParseError!Token {
     const sb = parser.startBit();
     errdefer parser.cancelBit(sb);
 

@@ -1,3 +1,4 @@
+file = decl[';'];
 decl =
 	| fndecl
 	| vardecl
@@ -14,12 +15,14 @@ expression =
 	| htmlattribute
 	| parens // (a, b, c) returns c
 	| block // {a; b; c} returns ø. choice: make parens the same as block? like do fndecls and vardecls? sure why not
-	| number
 	| string
+	| number
 ;
 
 parens = '(' decl[','] ')';
 block = '{' decl[';'] '}';
+
+args = decl[','];
 
 // note: this still leaves room for . also being for union/enum literals, eg .enumkey or .unionkey{a=true}
 htmlelement =
@@ -37,6 +40,10 @@ htmlattribute =
 // :: this means a list seperated by ','. the last item may or may not have a comma.
 elembody = ( expression )[','];
 
-vartype = 'state' | 'trigger' | 'const' | 'let';
-fntype = 'widget' | 'fn';
+vartype = 'state'<state> | 'trigger'<trigger> | 'const'<const_> | 'let'<let>;
+fntype = 'widget'<widget> | 'fn'<fn_>;
 type = 'i54';
+
+identifier = :identifier;
+number = :identifier;
+string = :string_start<> (:string | :string_escape<escape>)[]<bits> :string_end<>;
