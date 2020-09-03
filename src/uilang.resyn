@@ -3,10 +3,13 @@ decl =
 	| fndecl
 	| vardecl
 	| returnlyn
+	| assignment
 	| expressionlyn
 ;
 fndecl = fntype identifier '(' args ')' expression;
 vardecl = vartype identifier ':' type '=' expression;
+// in the future, this will be an operator
+assignment = identifier ('='<eq> | ('+' '=')<pleq> | ('-' '=')<meq>)<op> expression;
 returnlyn = 'return' expression;
 expressionlyn = expression;
 
@@ -17,7 +20,12 @@ expression =
 	| block // {a; b; c} returns ø. choice: make parens the same as block? like do fndecls and vardecls? sure why not
 	| string
 	| number
+	| ilfn
+	| variable
 ;
+
+ilfn = '|' identifier[','] '|' parens;
+variable = identifier;
 
 parens = '(' decl[','] ')';
 block = '{' decl[';'] '}';
@@ -26,7 +34,7 @@ args = decl[','];
 
 // note: this still leaves room for . also being for union/enum literals, eg .enumkey or .unionkey{a=true}
 htmlelement =
-	'.' identifier '(' elembody ')' ?htmleventhandler
+	'.' identifier parens (':' ':' htmleventhandler)?
 ;
 
 // .button () :: onclick |e| alert(e)
@@ -37,13 +45,10 @@ htmlattribute =
 	':' identifier '=' expression
 ;
 
-// :: this means a list seperated by ','. the last item may or may not have a comma.
-elembody = ( expression )[','];
-
 vartype = 'state'<state> | 'trigger'<trigger> | 'const'<const_> | 'let'<let>;
 fntype = 'widget'<widget> | 'fn'<fn_>;
 type = 'i54';
 
 identifier = :identifier;
-number = :identifier;
+number = :number;
 string = :string_start<> (:string | :string_escape<escape>)[]<bits> :string_end<>;

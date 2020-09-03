@@ -6,6 +6,7 @@ const State = enum {
     string_ending,
     string_ending_dblquote,
     comment,
+    number,
 };
 // why not just a union of name: []const u8?
 pub const Token = struct {
@@ -16,6 +17,7 @@ pub const Token = struct {
         string_escape,
         string_end,
         punctuation,
+        number,
     };
     kind: TokenType,
     text: []const u8,
@@ -55,6 +57,7 @@ pub const Tokenizer = struct {
                     switch (tkr.peek()) {
                         0 => return null,
                         'a'...'z', 'A'...'Z', '_', 128...255 => tkr.state = .identifier,
+                        '0'...'9' => tkr.state = .number,
                         ' ', '\n', '\t' => _ = {
                             _ = tkr.take();
                             start = tkr.current;
@@ -78,7 +81,7 @@ pub const Tokenizer = struct {
                             tkr.state = .comment;
                         },
                         else => |char| {
-                            inline for ("[]{}();:,=|?<>!#*+/-") |c| {
+                            inline for ("[]{}();:,=|?<>!#*+/-.") |c| {
                                 if (char == c) {
                                     _ = tkr.take();
                                     return tkr.token(start, .punctuation);
@@ -94,6 +97,13 @@ pub const Tokenizer = struct {
                     else => {
                         tkr.state = .main;
                         return tkr.token(start, .identifier);
+                    },
+                },
+                .number => switch (tkr.peek()) {
+                    '0'...'9' => _ = tkr.take(),
+                    else => {
+                        tkr.state = .main;
+                        return tkr.token(start, .number);
                     },
                 },
                 .string => switch (tkr.peek()) {

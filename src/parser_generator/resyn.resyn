@@ -1,8 +1,10 @@
+// in the future, this may be changed to (decl[';']<decl> ';'?) to make it easier to parse a wider range of things
 file = decl[';']<decls>;
 decl = :identifier<name> '=' component<value>;
 
 component =
 	| #operator("|")<or_op>
+	// in the future, whitespace may be put into a token and this would be #operator(:_) and ^ would be #operator(:_ "|" :_)
 	| #operator()<p_op>
 	| #suffix(suffixop)<suffixop>
 	| :identifier<decl_ref>
@@ -14,6 +16,7 @@ component =
 token_ref = ':' :identifier<token>;
 parens = '(' component ')';
 string = :string_start<> (:string | :string_escape<escape>)[]<bits> :string_end<>;
+// in the future, this may be changed to (component[',']<args> ','?) to make it easier to parse a wider range of things
 magic = '#' :identifier<name> '(' component[',']<args> ')';
 
 suffixop =
@@ -23,5 +26,7 @@ suffixop =
 ;
 
 nameset = '<' :identifier?<name> '>';
+// a suffix operator, 'a'[] matches 'a' repeated
+// in the future, #lockin() may be used after '[' for better error messages
 array = '[' component? ']';
 optional = '?';
