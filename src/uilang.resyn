@@ -1,10 +1,10 @@
-decl := fndecl | vardecl | returnlyn | expressionlyn;
-fndecl := fntype identifier '(' args ')' expression;
-vardecl := vartype identifier ':' type '=' expression;
-returnlyn := 'return' expression;
-expressionlyn := expression;
+decl = fndecl | vardecl | returnlyn | expressionlyn;
+fndecl = fntype identifier '(' args ')' expression;
+vardecl = vartype identifier ':' type '=' expression;
+returnlyn = 'return' expression;
+expressionlyn = expression;
 
-expression :=
+expression =
 	| htmlelement
 	| htmlattribute
 	| parens // (a, b, c) returns c
@@ -13,25 +13,25 @@ expression :=
 	| string
 ;
 
-parens := '(' decl[','] ')';
-block := '{' decl[';'] '}';
+parens = '(' decl[','] ')';
+block = '{' decl[';'] '}';
 
 // note: this still leaves room for . also being for union/enum literals, eg .enumkey or .unionkey{a=true}
-htmlelement :=
+htmlelement =
 	'.' identifier '(' elembody ')' ?htmleventhandler
 ;
 
 // .button () :: onclick |e| alert(e)
-htmleventhandler := identifier expression;
+htmleventhandler = identifier expression;
 
 // just a normal expression, meaning you can do eg .div (if (a) :title="hi" else :placeholder="lo"), as expected.
-htmlattribute :=
+htmlattribute =
 	':' identifier '=' expression
 ;
 
 // :: this means a list seperated by ','. the last item may or may not have a comma.
-elembody := ( expression )[','];
+elembody = ( expression )[','];
 
-vartype := 'state' | 'trigger' | 'const' | 'let';
-fntype := 'widget' | 'fn';
-type := 'i54';
+vartype = 'state' | 'trigger' | 'const' | 'let';
+fntype = 'widget' | 'fn';
+type = 'i54';
