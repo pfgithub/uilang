@@ -1,4 +1,9 @@
-decl = fndecl | vardecl | returnlyn | expressionlyn;
+decl =
+	| fndecl
+	| vardecl
+	| returnlyn
+	| expressionlyn
+;
 fndecl = fntype identifier '(' args ')' expression;
 vardecl = vartype identifier ':' type '=' expression;
 returnlyn = 'return' expression;

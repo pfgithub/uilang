@@ -568,14 +568,17 @@ pub fn main() !u8 {
     const alloc = &arena.allocator;
 
     const argv = try getArgs(alloc);
-    if (argv.len != 3) {
-        std.debug.warn("usage: {} infile.resyn outfile.zig\n", .{argv[0]});
+    if (argv.len < 2 or argv.len > 3) {
+        std.debug.warn("usage: {} infile.resyn [outfile.zig]\n", .{argv[0]});
         return 1;
     }
 
     const code = try std.fs.cwd().readFileAlloc(alloc, argv[1], std.math.maxInt(usize));
-    const file = try std.fs.cwd().createFile(argv[2], .{});
-    defer file.close();
+
+    const filemode: enum { file, stdout } = if (argv.len > 2) .file else .stdout;
+    const file = if (filemode == .file) try std.fs.cwd().createFile(argv[2], .{}) else std.io.getStdOut();
+    defer if (filemode == .file) file.close() else {};
+
     const fileOut = file.writer();
     var bufferedOut = std.io.bufferedWriter(fileOut);
 

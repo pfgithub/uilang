@@ -1,10 +1,6 @@
 file = decl[';']<decls>;
 decl = :identifier<name> '=' component<value>;
 
-// component = _component_noop2["|", nolast]
-// _component_noop2 = _component_noop[]
-// _component_noop = _component_nosuffix suffixop[]
-// _component_nosuffix = … the rest
 component =
 	| #operator("|")<or_op>
 	| #operator()<p_op>
@@ -26,7 +22,6 @@ suffixop =
 	| optional
 ;
 
-// sets the name of the thing. the default name is the decl_ref name. <> causes the item to not be put in the result struct.
 nameset = '<' :identifier?<name> '>';
 array = '[' component? ']';
 optional = '?';
