@@ -4,7 +4,7 @@ const Builder = std.build.Builder;
 pub fn addParser(src: []const u8, comptime packageName: []const u8, exe: anytype, b: *Builder) void {
     // build and run src/parser.zig
     // save the output to zig-cache/
-    const parser = b.addExecutable("parser_generator", "src/generator.zig");
+    const parser = b.addExecutable("parser_generator", "src/parser_generator/generator.zig");
     parser.setTarget(.{}); // this will run on your machine so it should be native arch
     parser.setBuildMode(.Debug); // debug is fast enough idk
 
@@ -24,15 +24,14 @@ pub fn build(b: *Builder) void {
 
     const mode = b.standardReleaseOptions();
 
-    const exe = b.addExecutable("dist_test", "src/dist_test.zig");
+    const exe = b.addExecutable("dist_test", "src/parser_generator_test.zig");
     exe.setTarget(target);
     exe.setBuildMode(mode);
-    addParser("src/resyn.resyn", "resyn_parser", exe, b);
-    exe.install();
+    addParser("src/parser_generator/resyn.resyn", "resyn_parser", exe, b);
 
     const run_cmd = exe.run();
-    run_cmd.step.dependOn(b.getInstallStep());
+    run_cmd.step.dependOn(&exe.step);
 
-    const run_step = b.step("run", "Run the app");
+    const run_step = b.step("test-parser-generator", "Test the parser generator");
     run_step.dependOn(&run_cmd.step);
 }

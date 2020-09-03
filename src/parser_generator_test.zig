@@ -62,7 +62,7 @@ fn printComponent(component: parser.Component, out: anytype) @TypeOf(out).Error!
 }
 
 pub fn main() !void {
-    const code = @embedFile("resyn.resyn");
+    const code = @embedFile("parser_generator/resyn.resyn");
 
     var gpalloc = std.heap.GeneralPurposeAllocator(.{}){};
     defer std.testing.expect(!gpalloc.deinit());
