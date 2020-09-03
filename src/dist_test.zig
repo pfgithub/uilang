@@ -1,5 +1,5 @@
 const std = @import("std");
-const parser = @import("dist.zig"); // in the future this will be added from build.zig in an addPackagePath so you can @import("parser") or something
+const parser = @import("resyn_parser");
 
 fn printComponent(component: parser.Component, out: anytype) @TypeOf(out).Error!void {
     switch (component) {
