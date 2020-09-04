@@ -1,54 +1,36 @@
-file = decl[';'];
-decl =
-	| fndecl
-	| vardecl
-	| returnlyn
-	| assignment
-	| expressionlyn
-;
-fndecl = fntype identifier '(' args ')' expression;
-vardecl = vartype identifier ':' type '=' expression;
-// in the future, this will be an operator
-assignment = identifier ('='<eq> | ('+' '=')<pleq> | ('-' '=')<meq>)<op> expression;
-returnlyn = 'return' expression;
-expressionlyn = expression;
+file = expression[';'];
 
 expression =
+	| #suffix(suffixop)<suffixop>
+	| vardecl
+	| returnstatement
 	| htmlelement
 	| htmlattribute
-	| parens // (a, b, c) returns c
-	| block // {a; b; c} returns ø. choice: make parens the same as block? like do fndecls and vardecls? sure why not
-	| string
-	| number
-	| ilfn
+	| parens
+	| block
+	| function
 	| variable
+	| number
+	| string
 ;
 
-ilfn = '|' identifier[','] '|' parens;
+vardecl = identifier '=' expression;
+// returns from a function, not a block or some parenthesis
+returnstatement = 'return' expression;
+htmlelement = '.' identifier parens;
+htmlattribute = ':' identifier '=' expression;
+
+// returns the last expression
+parens = '(' expression[','] ')';
+// can be broken out of (or returned if it's a function block)
+block = '{' expression[';'] '}';
+
+function = ('widget'<widget> | 'fn'<function>)<kind> '(' identifier[','] ')' expression;
+
 variable = identifier;
-
-parens = '(' decl[','] ')';
-block = '{' decl[';'] '}';
-
-args = decl[','];
-
-// note: this still leaves room for . also being for union/enum literals, eg .enumkey or .unionkey{a=true}
-htmlelement =
-	'.' identifier parens (':' ':' htmleventhandler)?
-;
-
-// .button () :: onclick |e| alert(e)
-htmleventhandler = identifier expression;
-
-// just a normal expression, meaning you can do eg .div (if (a) :title="hi" else :placeholder="lo"), as expected.
-htmlattribute =
-	':' identifier '=' expression
-;
-
-vartype = 'state'<state> | 'trigger'<trigger> | 'const'<const_> | 'let'<let>;
-fntype = 'widget'<widget> | 'fn'<fn_>;
-type = 'i54';
-
-identifier = :identifier;
 number = :number;
 string = :string_start<> (:string | :string_escape<escape>)[]<bits> :string_end<>;
+
+suffixop = '!';
+
+identifier = :identifier; // to allow for future expansion

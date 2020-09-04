@@ -1,4 +1,5 @@
 widget counter() {
+	// in js this will emit counted_34 or something (also maybe resyn should do that because it will be easier to read)
 	state counted: i54 = 0;
 	return .div (
 		:class="counter",

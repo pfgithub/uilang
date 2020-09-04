@@ -1,0 +1,9 @@
+const counter = widget() {
+	state counted: i54 = 0;
+	return .div (
+		:class="counter",
+		.button("++", :onclick = fn() counted += 1),
+		.span(" ", counted, " ")
+		.button("--", :onclick = fn() counted -= 1),
+	);
+}
