@@ -14,3 +14,4 @@ for the parser Generator
 - and make it so named single things get put into a struct like `file = a<b>` makes a struct with b but `file = a<>` makes no struct, same as `file = a<*>`.
 - remove `<>` because it looks dumb. idk what to replace it with though
 - disallow spaces inside things. eg `a ['b']` should not be allowed. also to do this, spaces need to be read as a token and not skipped. either this or have an autoformatter, this is probably easier and better.
+- maybe rather than putting positions randomly where they fit, try wrapping all top level things with `struct {pos: (start, end), value: _12}` eg
