@@ -82,6 +82,10 @@ const Structure = struct {
                     try val.structure.print(out);
                     try out.writeAll(",\n");
                 }
+                try out.writeAll(
+                    \\    _start: usize,
+                    \\    _end: usize,
+                );
                 try out.writeAll("};\n");
 
                 for (sct.values) |val| {
@@ -415,6 +419,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
         },
         .struc => |struc| {
             var resMap = std.ArrayList(struct { name: []const u8, id: usize }).init(alloc);
+            try out.writeAll("    const start = parser.cpos;");
             for (struc.values) |*value| {
                 const fnid = generator.nextID();
                 try nextCodegens.append(.{ .structure = &value.structure, .fnid = fnid });
@@ -427,12 +432,15 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                 try out.print("try _{}(parser);\n", .{fnid});
             }
 
+            try out.writeAll("    const end = parser.cpos;");
             try out.writeAll("    return ");
             try structure.print(out);
             try out.writeAll("{\n");
             for (resMap.items) |rv| {
                 try out.print("        .{} = _{},\n", .{ rv.name, rv.id });
             }
+            try out.writeAll("        ._start = start,");
+            try out.writeAll("        ._end = end,");
             try out.writeAll("    };\n");
         },
         .pointer => |itmnme| {

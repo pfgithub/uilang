@@ -21,6 +21,7 @@ pub const Token = struct {
     };
     kind: TokenType,
     text: []const u8,
+    start: usize,
 };
 pub const Tokenizer = struct {
     state: State,
@@ -46,6 +47,7 @@ pub const Tokenizer = struct {
         return .{
             .kind = ttype,
             .text = tkr.text[start..tkr.current],
+            .start = start,
         };
     }
 
@@ -178,6 +180,7 @@ pub const Parser = struct {
     tokenizer: Tokenizer,
     tokens: std.ArrayList(Token),
     tkpos: usize = 0,
+    cpos: usize = 0,
     errors: ?[]const u8 = null,
     fn init(alloc: *Alloc, code: []const u8) Parser {
         return .{
@@ -199,13 +202,21 @@ pub const Parser = struct {
             try parser.tokens.append(nextToken_ orelse return null);
         }
         defer parser.tkpos += 1;
-        return parser.tokens.items[parser.tkpos];
+
+        const restoken = parser.tokens.items[parser.tkpos];
+        parser.cpos = restoken.start + restoken.text.len;
+        return restoken;
     }
     fn startBit(parser: Parser) usize {
         return parser.tkpos;
     }
     fn cancelBit(parser: *Parser, prevPos: usize) void {
         parser.tkpos = prevPos;
+
+        if (parser.tkpos == 0) parser.cpos = 0 else {
+            const restoken = parser.tokens.items[parser.tkpos - 1];
+            parser.cpos = restoken.start + restoken.text.len;
+        }
     }
 };
 
