@@ -64,7 +64,7 @@ const Environment = struct {
 };
 
 pub fn main() !void {
-    const code = @embedFile("../tests/consistent.ul");
+    const code = @embedFile("../tests/consistent2.ul");
 
     var gpalloc = std.heap.GeneralPurposeAllocator(.{}){};
     defer std.testing.expect(!gpalloc.deinit());

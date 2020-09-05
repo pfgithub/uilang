@@ -98,10 +98,14 @@ const Structure = struct {
                     switch (val.magic) {
                         .none => |base| try base.print(out, mode),
                         .operator => try out.print("[]_{}", .{structure.typeNameID}),
-                        .suffix => |cse| try out.print(
-                            "struct {{ _: *_{}, {}: _{} }}",
-                            .{ structure.typeNameID, cse.name.?, cse.typeNameID },
-                        ),
+                        .suffix => |cse| {
+                            try out.print(
+                                "struct {{ _: *_{}, {}: ",
+                                .{ structure.typeNameID, cse.name.? },
+                            );
+                            try cse.print(out, mode);
+                            try out.writeAll("}");
+                        },
                     }
                     try out.writeAll(",\n");
                 }

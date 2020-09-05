@@ -21,7 +21,7 @@ pub const Component = blk: {
     _ = union(enum) {
         or_op: []_25,
         p_op: []_25,
-        suffixop: struct { _: *_25, suffixop: _18 },
+        suffixop: struct { _: *_25, suffixop: *Suffixop },
         decl_ref: []const u8,
         token_ref: *TokenRef,
         parens: *Parens,
