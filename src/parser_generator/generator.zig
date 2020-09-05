@@ -634,8 +634,24 @@ pub const Generator = struct {
             try out.writeAll(";\n");
         }
 
-        try out.writeAll(
-            \\//! Implementation below.
+        try out.writeAll("\n" ++
+            \\//.
+            \\//.
+            \\//.
+            \\//.
+            \\//.
+            \\//.
+            \\//.
+            \\//                 / ...=====================... \
+            \\// --------=======<     Implementation below.     >=======--------
+            \\//                 \ '''=====================''' /
+            \\//.
+            \\//.
+            \\//.
+            \\//.
+            \\//.
+            \\//.
+            \\//.
         ++ "\n\n");
 
         try out.writeAll(@embedFile("parser_header.zig"));

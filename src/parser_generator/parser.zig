@@ -102,7 +102,24 @@ pub const Optional = blk: {
     _ = []const u8;
     break :blk _71;
 };
-//! Implementation below.
+
+//.
+//.
+//.
+//.
+//.
+//.
+//.
+//                 / ...=====================... \
+// --------=======<     Implementation below.     >=======--------
+//                 \ '''=====================''' /
+//.
+//.
+//.
+//.
+//.
+//.
+//.
 
 const State = enum {
     main,
