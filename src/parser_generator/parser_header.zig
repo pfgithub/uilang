@@ -160,6 +160,40 @@ fn GetResType(comptime aname: []const u8) type {
     if (!@hasDecl(___, aname)) @compileError("unknown type " ++ aname);
     return @field(___, aname);
 }
+fn printErrorPos(text: []const u8, message: []const u8, epos: usize) void {
+    // todo rewrite this to be sane
+    var lyn: usize = 0;
+    var col: usize = 0;
+    var latestLine: usize = 0;
+    for (text) |char, i| {
+        if (epos == i) break;
+        col += 1;
+        if (char == '\n') {
+            lyn += 1;
+            col = 0;
+            latestLine = i + 1;
+        }
+    }
+    var lineText = std.mem.span(@ptrCast([*:'\n']const u8, &text[latestLine]));
+    std.debug.warn("\x1b[1m\x1b[97m./file:{}:{}: \x1b[31merror: \x1b[97m{}\x1b(B\x1b[m\n", .{ lyn + 1, col + 1, message });
+    // would it be bad to tokenize and syntax highlight lineText?
+    for (lineText) |char, i| {
+        if (i == col) std.debug.warn("\x1b[31m", .{});
+        switch (char) {
+            '\t' => std.debug.warn("    ", .{}),
+            else => std.debug.warn("{c}", .{char}),
+        }
+    }
+    std.debug.warn("\x1b(B\x1b[m\n", .{});
+    var i: usize = 0;
+    while (i < col) : (i += 1) {
+        switch (lineText[i]) {
+            '\t' => std.debug.warn("    ", .{}),
+            else => std.debug.warn(" ", .{}),
+        }
+    }
+    std.debug.warn("^\n", .{});
+}
 pub fn parse(alloc: *Alloc, code: []const u8, comptime a: anytype) !GetResType(__aToString(a)) {
     const aname = comptime __aToString(a);
     const ResType = GetResType(aname);
@@ -169,7 +203,18 @@ pub fn parse(alloc: *Alloc, code: []const u8, comptime a: anytype) !GetResType(_
     defer parser.deinit();
 
     // TODO: @resultLocation().* = …
-    const outmain = try resfn(&parser);
+    const outmain = resfn(&parser) catch |e| switch (e) {
+        error.OutOfMemory => return e,
+        error.Recoverable, error.Unrecoverable => {
+            if (parser.unrecoverableStats) |stats| {
+                printErrorPos(parser.tokenizer.text, stats.message, stats.pos);
+                printErrorPos(parser.tokenizer.text, "(farthest)", parser.farthest);
+            } else {
+                printErrorPos(parser.tokenizer.text, parser.errors.?, parser.farthest);
+            }
+            std.debug.panic("Parsing failed\n", .{});
+        },
+    };
     if ((try parser.nextToken())) |tok| {
         std.debug.panic("Remaining token: {}\n", .{tok});
     }
@@ -181,7 +226,13 @@ pub const Parser = struct {
     tokens: std.ArrayList(Token),
     tkpos: usize = 0,
     cpos: usize = 0,
+    farthest: usize = 0,
     errors: ?[]const u8 = null,
+    unrecoverableStats: ?struct {
+        pos: usize,
+        farthest: usize,
+        message: []const u8,
+    } = null,
     fn init(alloc: *Alloc, code: []const u8) Parser {
         return .{
             .alloc = alloc,
@@ -194,17 +245,27 @@ pub const Parser = struct {
     }
     fn err(parser: *Parser, message: []const u8) ParseError {
         parser.errors = message;
-        return ParseError.ParseError;
+        return ParseError.Recoverable;
+    }
+    fn unrecoverableError(parser: *Parser, message: []const u8) ParseError {
+        parser.errors = message;
+        parser.unrecoverableStats = .{
+            .pos = parser.cpos,
+            .message = message,
+            .farthest = parser.farthest,
+        };
+        return ParseError.Unrecoverable;
     }
     fn nextToken(parser: *Parser) ParseError!?Token {
         if (parser.tkpos >= parser.tokens.items.len) {
-            const nextToken_ = parser.tokenizer.next() catch return parser.err("bad token");
+            const nextToken_ = parser.tokenizer.next() catch return parser.unrecoverableError("bad token");
             try parser.tokens.append(nextToken_ orelse return null);
         }
         defer parser.tkpos += 1;
 
         const restoken = parser.tokens.items[parser.tkpos];
         parser.cpos = restoken.start + restoken.text.len;
+        parser.farthest = parser.cpos;
         return restoken;
     }
     fn startBit(parser: Parser) usize {
@@ -221,8 +282,9 @@ pub const Parser = struct {
 };
 
 pub const ParseError = error{
+    Unrecoverable,
     OutOfMemory,
-    ParseError,
+    Recoverable,
 };
 
 fn _parseToken(parser: *Parser, tokenKind: Token.TokenType, expectedText: ?[]const u8) ParseError!Token {

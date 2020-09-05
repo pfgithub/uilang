@@ -370,7 +370,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
 
                         try out.print(
                             \\    blk: {{
-                            \\        return _{}{{ .{} = _{}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break :blk}} }};
+                            \\        return _{}{{ .{} = _{}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => break :blk}} }};
                             \\    }}
                         ,
                             .{ structure.typeNameID, value.field, fnid },
@@ -390,10 +390,10 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                         // oh my. is there a way to have named fields?
                         try out.print(
                             \\    var resAL = std.ArrayList(_{0}).init(parser.alloc);
-                            \\    {4}_ = _{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => {{}}}}; // optional first joiner
+                            \\    {4}_ = _{1}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => {{}}}}; // optional first joiner
                             \\    while (true) {{
-                            \\        try resAL.append(_{2}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => {5}}});
-                            \\        {4}_ = _{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}};
+                            \\        try resAL.append(_{2}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => {5}}});
+                            \\        {4}_ = _{1}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => break}};
                             \\    }}
                             \\    if (resAL.items.len == 0) return parser.err("no items");
                             \\    if (resAL.items.len == 1) return resAL.items[0];
@@ -449,7 +449,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                             \\    var topUnwrapped = resc;
                             \\
                             \\    while (true) {{
-                            \\        const suffix = _{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}};
+                            \\        const suffix = _{1}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => break}};
                             \\        const allocated = try parser.alloc.create(@TypeOf(topUnwrapped));
                             \\        allocated.* = topUnwrapped;
                             \\        topUnwrapped = .{{ .{2} = .{{ ._ = allocated, .{3} = suffix }} }};
@@ -499,7 +499,9 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                         for (resMap.items) |rv| {
                             try out.print(", _{}", .{rv.id});
                         }
-                        try out.print(") catch @panic(\"locked in item did not pass ({})\");", .{randomid});
+                        try out.writeAll(") catch |e| switch(e) {error.Recoverable => ");
+                        try out.print("return parser.unrecoverableError(\"lockin failed ({})\")", .{randomid});
+                        try out.writeAll(", else => return e};");
                         try out.writeAll("}");
                         try out.print("fn _{0}(parser: *Parser, start: usize", .{nextFunctionHalf});
                         for (resMap.items) |rv| {
@@ -555,8 +557,8 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
             try out.print("    return _{}(parser)", .{fnid});
             try out.writeAll(
                 \\ catch |e| switch (e) {
-                \\        error.OutOfMemory => return e,
-                \\        error.ParseError => return null, // note that the called function already cancelBit'd so it's ok
+                \\        else => return e,
+                \\        error.Recoverable => return null, // note that the called function already cancelBit'd so it's ok
                 \\    };
                 \\
             );
@@ -579,9 +581,9 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                 \\    var resAL = std.ArrayList(_{0}).init(parser.alloc);
                 \\    while(true) {{
                 \\        // :: parse 1 catch break
-                \\        try resAL.append(_{1}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}});
+                \\        try resAL.append(_{1}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => break}});
                 \\        // :: parse 2 catch break
-                \\        {3}_ = _{2}(parser) catch |e| switch(e) {{error.OutOfMemory => return e, error.ParseError => break}};
+                \\        {3}_ = _{2}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => break}};
                 \\    }}
                 \\    return resAL.toOwnedSlice();
                 \\

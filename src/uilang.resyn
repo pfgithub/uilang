@@ -1,6 +1,7 @@
 file = expression[';'];
 
 expression =
+	| #operator(('+' '=')<pleq> | ('-' '=')<meq>)<operator>
 	| #suffix(suffixop)<suffixop>
 	| vardecl
 	| function
@@ -14,7 +15,7 @@ expression =
 	| string
 ;
 
-vardecl = ('let'<let> | 'const'<const_> | 'state'<state> | 'trigger'<trigger>)<vartype> identifier '=' #lockin() expression;
+vardecl = ('let'<let> | 'const'<const_> | 'state'<state> | 'trigger'<trigger>)<vartype> #lockin() identifier (':' ttype)?<ttype> '=' expression;
 // returns from a function, not a block or some parenthesis
 returnstatement = 'return' expression;
 htmlelement = '.' #lockin() identifier parens;
@@ -25,7 +26,7 @@ parens = '(' #lockin() expression[','] ')';
 // can be broken out of (or returned if it's a function block)
 block = '{' #lockin() expression[';'] '}';
 
-function = ('widget'<widget> | 'fn'<function>)<kind> '(' identifier[','] ')' expression;
+function = ('widget'<widget> | 'fn'<function>)<kind> #lockin() '(' identifier[','] ')' expression;
 
 variable = identifier;
 number = :number;
@@ -34,3 +35,5 @@ string = :string_start<> #lockin() (:string | :string_escape<escape>)[]<bits> :s
 suffixop = '!';
 
 identifier = :identifier; // to allow for future expansion
+
+ttype = 'i54'<inttype> | 'f64'<floattype>
