@@ -15,7 +15,7 @@ expression =
 	| string
 ;
 
-vardecl = ('let'<let> | 'const'<const_> | 'state'<state> | 'trigger'<trigger>)<vartype> #lockin() identifier (':' ttype)?<ttype> '=' expression;
+vardecl = ('let'<let> | 'const'<const_> | 'state'<state> | 'trigger'<trigger>)<vartype> #lockin() identifier (':' expression)?<ttype> '=' expression;
 // returns from a function, not a block or some parenthesis
 returnstatement = 'return' expression;
 htmlelement = '.' #lockin() identifier parens;
@@ -35,5 +35,3 @@ string = :string_start<> #lockin() (:string | :string_escape<escape>)[]<bits> :s
 suffixop = '!';
 
 identifier = :identifier; // to allow for future expansion
-
-ttype = 'i54'<inttype> | 'f64'<floattype>
