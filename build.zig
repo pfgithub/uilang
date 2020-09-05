@@ -16,7 +16,10 @@ pub fn addParser(src: []const u8, comptime packageName: []const u8, exe: anytype
     const runner = b.addSystemCommand(&[_][]const u8{ "zig-cache/bin/parser_generator", src, pkgfile });
     runner.step.dependOn(&parser.install_step.?.step);
 
-    exe.step.dependOn(&runner.step);
+    const fmt = b.addFmt(&[_][]const u8{pkgfile});
+    fmt.step.dependOn(&runner.step);
+    exe.step.dependOn(&fmt.step);
+
     exe.addPackagePath(packageName, pkgfile);
 }
 
