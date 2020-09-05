@@ -127,7 +127,7 @@ const Structure = struct {
     }
     fn printDecl(structure: Structure, out: anytype) @TypeOf(out).Error!void {
         try out.print("const _{} = ", .{structure.typeNameID});
-        try structure.printType(out, .required);
+        try structure.printType(out, .zigonly);
         try out.writeAll(";\n");
         switch (structure.kind) {
             .unattached_magic => unreachable, // TODO report error unattached magic
