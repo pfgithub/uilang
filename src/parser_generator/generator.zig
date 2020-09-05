@@ -31,25 +31,26 @@ const StructMagic = union(enum) {
 const StructField = struct { field: ?[]const u8, magic: StructMagic };
 const UnionMagic = union(enum) {
     none: Structure,
-    operator: ?Structure,
+    operator: ?*Structure,
     suffix: Structure,
 };
 const UnionField = struct { field: []const u8, magic: UnionMagic };
-// this needs to store an id or something
-// so printing it can give a type name rather than a type
+
+const MagicType = union(enum) {
+    operator: ?*Structure,
+    suffix: *Structure,
+    lockin: void,
+};
+
 const StructureKind = union(enum) {
-    unattached_magic: struct {
-        name: []const u8,
-        args: []parser.Component, // []StructureKind? it seems like []parser.Component may give more control but idk
-    },
+    unattached_magic: MagicType,
     unio: struct {
         values: []UnionField,
     },
     struc: struct {
         values: []StructField,
-        // if values.len == 0, print struct {__: u1 = 0}
     },
-    pointer: []const u8, // TODO maybe: make this *StructureKind.
+    pointer: []const u8,
     value: []const u8,
     token: struct { kind: []const u8, expected: ?[]const u8 },
     optional: *Structure,
@@ -201,38 +202,20 @@ const Structure = struct {
                     // that might even make some things more clear in the language. probably not worth the change idk. it is simpler though maybe not really
                     // not really
                     switch (structure.kind) {
-                        .unattached_magic => |uam| {
-                            const uamName = std.meta.stringToEnum(enum { operator, suffix }, uam.name) orelse unreachable; // TODO report error :: invalid magic name
-                            // uam.name, uam.args
-                            switch (uamName) {
-                                .operator => {
-                                    // aaa the indentation is too much help pls
-                                    const uamJoiner: ?Structure = if (uam.args.len == 1) blk: {
-                                        const uamJoiner = try createForComponent(alloc, uam.args[0], gen);
-                                        if (uamJoiner.name != null) unreachable; // TODO support named operators
-                                        break :blk uamJoiner;
-                                    } else if (uam.args.len == 0) blk: {
-                                        break :blk null;
-                                    } else unreachable; // TODO report error :: invalid number of args
-                                    // ok so structure is actually = to []ThisUnion
-                                    // which is weird
-                                    // maybe it should have no structure then
-                                    try resFields.append(.{
-                                        .field = structure.name.?,
-                                        .magic = .{ .operator = uamJoiner },
-                                    });
-                                },
-                                .suffix => {
-                                    if (uam.args.len != 1) unreachable; // TODO report error :: invalid number of args
-                                    const uamSuffix = try createForComponent(alloc, uam.args[0], gen);
-                                    if (uamSuffix.name == null) unreachable; // TODO support unnamed suffixes
+                        .unattached_magic => |uam| switch (uam) {
+                            .operator => |operator| try resFields.append(.{
+                                .field = structure.name.?,
+                                .magic = .{ .operator = operator },
+                            }),
+                            .suffix => |suffix| {
+                                if (suffix.name == null) unreachable; // TODO support unnamed suffixes
 
-                                    try resFields.append(.{
-                                        .field = structure.name.?,
-                                        .magic = .{ .suffix = uamSuffix },
-                                    });
-                                },
-                            }
+                                try resFields.append(.{
+                                    .field = structure.name.?,
+                                    .magic = .{ .suffix = suffix.* },
+                                });
+                            },
+                            else => unreachable, // TODO report error :: invalid magic
                         },
                         else => try resFields.append(.{
                             .field = structure.name.?,
@@ -250,18 +233,9 @@ const Structure = struct {
                     const structure = try createForComponent(alloc, p_component, gen);
 
                     switch (structure.kind) {
-                        .unattached_magic => |uam| {
-                            // in the future, this will be done by the uam parser itself (because uam needs to be able to have a real structure.name)
-                            // then we will switch on it
-                            const uamName = std.meta.stringToEnum(enum { lockin }, uam.name) orelse unreachable; // TODO report error bad uam
-                            switch (uamName) {
-                                .lockin => {
-                                    if (uam.args.len != 0) unreachable; // TODO support @lockin("error message")
-                                    try resFields.append(
-                                        .{ .field = structure.name, .magic = .lockin },
-                                    );
-                                },
-                            }
+                        .unattached_magic => |uam| switch (uam) {
+                            .lockin => try resFields.append(.{ .field = structure.name, .magic = .lockin }),
+                            else => unreachable, // TODO error can't use that type of uam here
                         },
                         else => try resFields.append(
                             .{ .field = structure.name, .magic = .{ .none = structure } },
@@ -280,9 +254,27 @@ const Structure = struct {
             .token_ref => |token| {
                 return Structure.init(gen, token.token, .{ .token = .{ .kind = token.token, .expected = null } });
             },
-            .magic => |magic| return Structure.init(gen, null, .{
-                .unattached_magic = .{ .name = magic.name, .args = magic.args },
-            }),
+            .magic => |magic| {
+                const magicType = std.meta.stringToEnum(@TagType(MagicType), magic.name) orelse unreachable; // TODO report error :: bad magic
+                switch (magicType) {
+                    .suffix => {
+                        if (magic.args.len != 1) unreachable; // TODO report error :: missing args
+                        const substructure = try createForComponent(alloc, magic.args[0], gen);
+                        return Structure.init(gen, substructure.name, .{ .unattached_magic = .{ .suffix = try allocDupe(alloc, substructure) } });
+                    },
+                    .operator => {
+                        if (magic.args.len == 0) return Structure.init(gen, null, .{ .unattached_magic = .{ .operator = null } });
+                        if (magic.args.len > 1) unreachable; // TODO report error :: bad args count
+                        const substructure = try createForComponent(alloc, magic.args[0], gen);
+                        return Structure.init(gen, null, .{ .unattached_magic = .{ .operator = try allocDupe(alloc, substructure) } });
+                    },
+                    .lockin => {
+                        if (magic.args.len == 1) unreachable; // TODO support #lockin("error message")
+                        if (magic.args.len > 1) unreachable; // TODO report error :: bad args count
+                        return Structure.init(gen, null, .{ .unattached_magic = .lockin });
+                    },
+                }
+            },
             .suffixop => |sfxop| {
                 const structure = try createForComponent(alloc, sfxop._.*, gen);
                 switch (sfxop.suffixop.*) {
@@ -378,7 +370,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                     },
                     .operator => |*nost| {
                         const joinerFnID = generator.nextID();
-                        if (nost.*) |*nv| try nextCodegens.append(.{ .structure = nv, .fnid = joinerFnID });
+                        if (nost.*) |nv| try nextCodegens.append(.{ .structure = nv, .fnid = joinerFnID });
                         const nextFunctionHalf = generator.nextID();
 
                         // imagine: automatically detect

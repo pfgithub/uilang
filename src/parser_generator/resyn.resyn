@@ -6,7 +6,7 @@ component =
 	| #operator("|")<or_op>
 	// in the future, whitespace may be put into a token and this would be #operator(:_) and ^ would be #operator(:_ "|" :_)
 	| #operator()<p_op>
-	| #suffix(suffixop)<suffixop>
+	| #suffix(suffixop)
 	| :identifier<decl_ref>
 	| token_ref
 	| parens
