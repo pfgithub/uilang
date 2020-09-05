@@ -74,7 +74,8 @@ pub fn main() !void {
 
     const parsed = try parser.parse(alloc, code, .File);
 
-    const out = std.io.getStdOut().writer();
+    var outAL = std.ArrayList(u8).init(alloc);
+    const out = outAL.writer();
 
     for (parsed) |decl| {
         try out.writeAll(decl.name);
@@ -82,4 +83,8 @@ pub fn main() !void {
         try printComponent(decl.value.*, out);
         try out.writeAll(";\n");
     }
+
+    const stdout = std.io.getStdOut().writer();
+
+    try parser.printSyntaxHighlight(outAL.items, stdout);
 }

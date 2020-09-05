@@ -160,7 +160,37 @@ fn GetResType(comptime aname: []const u8) type {
     if (!@hasDecl(___, aname)) @compileError("unknown type " ++ aname);
     return @field(___, aname);
 }
-fn printErrorPos(text: []const u8, message: []const u8, epos: usize) void {
+
+pub fn printSyntaxHighlight(text: []const u8, out: anytype) @TypeOf(out).Error!void {
+    var tokenizer = Tokenizer.init(text);
+    while (true) {
+        const start = tokenizer.current;
+        const nextToken = tokenizer.next() catch {
+            try out.print("\x1b[31m{}\x1b(B\x1b[m", .{tokenizer.text[start..]});
+            break;
+        };
+        const token = nextToken orelse break;
+        const here = tokenizer.current;
+        switch (token.kind) {
+            .identifier => try out.writeAll("\x1b[97m"),
+            .string_start => try out.writeAll("\x1b[32m"),
+            .string_end => try out.writeAll("\x1b[32m"),
+            .string => try out.writeAll("\x1b[92m"),
+            .string_escape => try out.writeAll("\x1b[94m"),
+            .punctuation => try out.writeAll(""),
+            .number => try out.writeAll("\x1b[96m"),
+        }
+        for (tokenizer.text[start..here]) |char| {
+            switch (char) {
+                '\t' => try out.writeAll("    "),
+                else => try out.writeByte(char),
+            }
+        }
+        try out.writeAll("\x1b(B\x1b[m");
+    }
+}
+
+pub fn printErrorPos(text: []const u8, message: []const u8, epos: usize, out: anytype) @TypeOf(out).Error!void {
     // todo rewrite this to be sane
     var lyn: usize = 0;
     var col: usize = 0;
@@ -175,24 +205,18 @@ fn printErrorPos(text: []const u8, message: []const u8, epos: usize) void {
         }
     }
     var lineText = std.mem.span(@ptrCast([*:'\n']const u8, &text[latestLine]));
-    std.debug.warn("\x1b[1m\x1b[97m./file:{}:{}: \x1b[31merror: \x1b[97m{}\x1b(B\x1b[m\n", .{ lyn + 1, col + 1, message });
+    try out.print("\x1b[1m\x1b[97m./file:{}:{}: \x1b[31merror: \x1b[97m{}\x1b(B\x1b[m\n", .{ lyn + 1, col + 1, message });
     // would it be bad to tokenize and syntax highlight lineText?
-    for (lineText) |char, i| {
-        if (i == col) std.debug.warn("\x1b[31m", .{});
-        switch (char) {
-            '\t' => std.debug.warn("    ", .{}),
-            else => std.debug.warn("{c}", .{char}),
-        }
-    }
-    std.debug.warn("\x1b(B\x1b[m\n", .{});
+    try printSyntaxHighlight(lineText, out);
+    try out.print("\x1b(B\x1b[m\n", .{});
     var i: usize = 0;
     while (i < col) : (i += 1) {
         switch (lineText[i]) {
-            '\t' => std.debug.warn("    ", .{}),
-            else => std.debug.warn(" ", .{}),
+            '\t' => try out.print("    ", .{}),
+            else => try out.print(" ", .{}),
         }
     }
-    std.debug.warn("^\n", .{});
+    try out.print("^\n", .{});
 }
 pub fn parse(alloc: *Alloc, code: []const u8, comptime a: anytype) !GetResType(__aToString(a)) {
     const aname = comptime __aToString(a);
@@ -202,15 +226,17 @@ pub fn parse(alloc: *Alloc, code: []const u8, comptime a: anytype) !GetResType(_
     var parser = Parser.init(alloc, code);
     defer parser.deinit();
 
+    const out = std.io.getStdErr().writer();
+
     // TODO: @resultLocation().* = …
     const outmain = resfn(&parser) catch |e| switch (e) {
         error.OutOfMemory => return e,
         error.Recoverable, error.Unrecoverable => {
             if (parser.unrecoverableStats) |stats| {
-                printErrorPos(parser.tokenizer.text, stats.message, stats.pos);
-                printErrorPos(parser.tokenizer.text, "(farthest)", parser.farthest);
+                try printErrorPos(parser.tokenizer.text, stats.message, stats.pos, out);
+                try printErrorPos(parser.tokenizer.text, "(farthest)", parser.farthest, out);
             } else {
-                printErrorPos(parser.tokenizer.text, parser.errors.?, parser.farthest);
+                try printErrorPos(parser.tokenizer.text, parser.errors.?, parser.farthest, out);
             }
             std.debug.panic("Parsing failed\n", .{});
         },
