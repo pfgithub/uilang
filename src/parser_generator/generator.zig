@@ -54,22 +54,23 @@ const StructureKind = union(enum) {
         joiner: ?*Structure,
     },
 };
+const PrintMode = enum { required, userdisplay, zigonly };
 const Structure = struct {
     name: ?[]const u8, // the name if it has one
     kind: StructureKind,
     typeNameID: usize,
-    fn print(structure: Structure, out: anytype) @TypeOf(out).Error!void {
-        try out.print("_{}", .{structure.typeNameID});
+    // TODO there needs to be a way of differentiating required and not required sections. in not required sections, don't do this blk: thing at all.
+    fn print(structure: Structure, out: anytype, mode: PrintMode) @TypeOf(out).Error!void {
+        // try out.writeAll("void");
+        if (mode == .zigonly) {
+            try out.print("_{}", .{structure.typeNameID});
+            return;
+        }
+        if (mode == .required) try out.print("blk_{}: {{_ = ", .{structure.typeNameID});
+        try structure.printType(out, .userdisplay);
+        if (mode == .required) try out.print("; break :blk_{0} _{0};}}", .{structure.typeNameID});
     }
-    // what if we still recursively printed but we made it generate multiple decls
-    // so eg: const DeclName = struct {hello: *Hello}
-    // const _0 = DeclName;
-    // const _1 = DeclName::hello::optionalunwrap ok yeah uuh
-    // that could be neat right?
-    // and then printDecl is for the top level and has an arg for DeclName
-    // or maybe generate a _template_DeclName which can be looked at by humans
-    fn printDecl(structure: Structure, out: anytype) @TypeOf(out).Error!void {
-        try out.print("const _{} = ", .{structure.typeNameID});
+    fn printType(structure: Structure, out: anytype, mode: PrintMode) @TypeOf(out).Error!void {
         switch (structure.kind) {
             .unattached_magic => unreachable, // TODO report error unattached magic
             .struc => |sct| {
@@ -79,18 +80,14 @@ const Structure = struct {
                     try out.writeAll("    ");
                     try out.writeAll(val.field.?);
                     try out.writeAll(": ");
-                    try val.structure.print(out);
+                    try val.structure.print(out, mode);
                     try out.writeAll(",\n");
                 }
                 try out.writeAll(
                     \\    _start: usize,
                     \\    _end: usize,
                 );
-                try out.writeAll("};\n");
-
-                for (sct.values) |val| {
-                    try val.structure.printDecl(out);
-                }
+                try out.writeAll("}");
             },
             .unio => |sct| {
                 try out.writeAll("union(enum) {\n");
@@ -99,7 +96,7 @@ const Structure = struct {
                     try out.writeAll(val.field);
                     try out.writeAll(": ");
                     switch (val.magic) {
-                        .none => |base| try base.print(out),
+                        .none => |base| try base.print(out, mode),
                         .operator => try out.print("[]_{}", .{structure.typeNameID}),
                         .suffix => |cse| try out.print(
                             "struct {{ _: *_{}, {}: _{} }}",
@@ -108,8 +105,38 @@ const Structure = struct {
                     }
                     try out.writeAll(",\n");
                 }
-                try out.writeAll("};\n");
-
+                try out.writeAll("}");
+            },
+            .pointer => |ptr| {
+                try out.writeAll("*");
+                try writeTypeNameFor(out, ptr);
+            },
+            .value => |valu| {
+                try writeTypeNameFor(out, valu);
+            },
+            .token => try out.writeAll("[]const u8"),
+            .optional => |optv| {
+                try out.writeAll("?");
+                try optv.print(out, mode);
+            },
+            .array_only => |ao| {
+                try out.writeAll("[]"); // []const ?
+                try ao.item.print(out, mode);
+            },
+        }
+    }
+    fn printDecl(structure: Structure, out: anytype) @TypeOf(out).Error!void {
+        try out.print("const _{} = ", .{structure.typeNameID});
+        try structure.printType(out, .required);
+        try out.writeAll(";\n");
+        switch (structure.kind) {
+            .unattached_magic => unreachable, // TODO report error unattached magic
+            .struc => |sct| {
+                for (sct.values) |val| {
+                    try val.structure.printDecl(out);
+                }
+            },
+            .unio => |sct| {
                 for (sct.values) |val| {
                     switch (val.magic) {
                         .none => |base| try base.printDecl(out),
@@ -118,28 +145,13 @@ const Structure = struct {
                     }
                 }
             },
-            .pointer => |ptr| {
-                try out.writeAll("*");
-                try writeTypeNameFor(out, ptr);
-                try out.writeAll(";\n");
-            },
-            .value => |valu| {
-                try writeTypeNameFor(out, valu);
-                try out.writeAll(";\n");
-            },
-            .token => try out.writeAll("[]const u8;\n"),
+            .pointer => {},
+            .value => {},
+            .token => {},
             .optional => |optv| {
-                try out.writeAll("?");
-                try optv.print(out);
-                try out.writeAll(";\n");
-
                 try optv.printDecl(out);
             },
             .array_only => |ao| {
-                try out.writeAll("[]"); // []const ?
-                try ao.item.print(out);
-                try out.writeAll(";\n");
-
                 try ao.item.printDecl(out);
                 if (ao.joiner) |jnr| try jnr.printDecl(out);
             },
@@ -434,7 +446,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
 
             try out.writeAll("    const end = parser.cpos;");
             try out.writeAll("    return ");
-            try structure.print(out);
+            try structure.print(out, .zigonly);
             try out.writeAll("{\n");
             for (resMap.items) |rv| {
                 try out.print("        .{} = _{},\n", .{ rv.name, rv.id });
@@ -551,7 +563,7 @@ pub const Generator = struct {
             try out.writeAll("pub const ");
             try writeTypeNameFor(out, decl.name);
             try out.writeAll(" = ");
-            try structure.print(out);
+            try structure.print(out, .required);
             try out.writeAll(";\n");
             try structure.printDecl(out);
 

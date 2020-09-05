@@ -15,3 +15,4 @@ for the parser Generator
 - remove `<>` because it looks dumb. idk what to replace it with though
 - disallow spaces inside things. eg `a ['b']` should not be allowed. also to do this, spaces need to be read as a token and not skipped. either this or have an autoformatter, this is probably easier and better.
 - maybe rather than putting positions randomly where they fit, try wrapping all top level things with `struct {pos: (start, end), value: _12}` eg
+- instead of "demo types", how about a function `T(comptime a: type, comptime b: type) type {return b}` and then instead of a: _12 do a: T(struct {actual type}, _12)

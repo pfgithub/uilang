@@ -36,9 +36,12 @@ fn createJSSafeName(alloc: *Alloc, name: []const u8, prefix: []const u8) ![]cons
     return res.toOwnedSlice();
 }
 
-const VarInfo = struct {
-    const VarKind = enum { const_, let, state, trigger };
-    kind: VarKind,
+const Type = struct {};
+
+const DeclInfo = struct {
+    const DeclKind = enum { const_, let, state, trigger };
+    kind: DeclKind,
+    decl_type: Type,
     jsname: []const u8,
     fn init(alloc: *Alloc, kind: VarKind, name: []const u8) !VarInfo {
         return VarInfo{
@@ -56,8 +59,8 @@ const VarInfo = struct {
 
 // gives information about variables and decls and stuff
 const Environment = struct {
-    parent: *Environment,
-    _variables: std.StringHashMap(VarInfo),
+    parent: ?*Environment,
+    _variables: std.StringHashMap(DeclInfo),
 };
 
 pub fn main() !void {
