@@ -13,11 +13,11 @@ component =
 	| string
 	| magic
 ;
-token_ref = ':' :identifier<token>;
-parens = '(' component ')';
-string = :string_start<> (:string | :string_escape<escape>)[]<bits> :string_end<>;
+token_ref = ':' #lockin() :identifier<token>;
+parens = '(' #lockin() component ')';
+string = :string_start<> #lockin() (:string | :string_escape<escape>)[]<bits> :string_end<>;
 // in the future, this may be changed to (component[',']<args> ','?) to make it easier to parse a wider range of things
-magic = '#' :identifier<name> '(' component[',']<args> ')';
+magic = '#' #lockin() :identifier<name> '(' component[',']<args> ')';
 
 suffixop =
 	| nameset
@@ -25,8 +25,8 @@ suffixop =
 	| optional
 ;
 
-nameset = '<' :identifier?<name> '>';
+nameset = '<' #lockin() :identifier?<name> '>';
 // a suffix operator, 'a'[] matches 'a' repeated
 // in the future, #lockin() may be used after '[' for better error messages
-array = '[' component? ']';
+array = '[' #lockin() component? ']';
 optional = '?';

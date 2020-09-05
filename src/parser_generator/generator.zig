@@ -24,7 +24,11 @@ fn writeTypeNameFor(out: anytype, snakecase: []const u8) !void {
     }
 }
 
-const StructField = struct { field: ?[]const u8, structure: Structure };
+const StructMagic = union(enum) {
+    none: Structure,
+    lockin: void,
+};
+const StructField = struct { field: ?[]const u8, magic: StructMagic };
 const UnionMagic = union(enum) {
     none: Structure,
     operator: ?Structure,
@@ -76,14 +80,25 @@ const Structure = struct {
             .struc => |sct| {
                 try out.writeAll("struct {\n");
                 for (sct.values) |val| {
-                    if (val.field == null) continue;
-                    try out.writeAll("    ");
-                    try out.writeAll(val.field.?);
-                    try out.writeAll(": ");
-                    try val.structure.print(out, mode);
-                    try out.writeAll(",\n");
+                    switch (val.magic) {
+                        .none => |nmgi| {
+                            if (val.field == null) {
+                                try out.writeAll("// <unnamed>: …\n");
+                                continue;
+                            }
+                            try out.writeAll("    ");
+                            try out.writeAll(val.field.?);
+                            try out.writeAll(": ");
+                            try nmgi.print(out, mode);
+                            try out.writeAll(",\n");
+                        },
+                        .lockin => {
+                            try out.writeAll("// <lockin past this point>\n");
+                        },
+                    }
                 }
                 try out.writeAll(
+                    \\
                     \\    _start: usize,
                     \\    _end: usize,
                 );
@@ -136,9 +151,10 @@ const Structure = struct {
         switch (structure.kind) {
             .unattached_magic => unreachable, // TODO report error unattached magic
             .struc => |sct| {
-                for (sct.values) |val| {
-                    try val.structure.printDecl(out);
-                }
+                for (sct.values) |val| switch (val.magic) {
+                    .none => |substructure| try substructure.printDecl(out),
+                    .lockin => {},
+                };
             },
             .unio => |sct| {
                 for (sct.values) |val| {
@@ -233,7 +249,24 @@ const Structure = struct {
                 for (p_components) |p_component| {
                     const structure = try createForComponent(alloc, p_component, gen);
 
-                    try resFields.append(.{ .field = structure.name, .structure = structure });
+                    switch (structure.kind) {
+                        .unattached_magic => |uam| {
+                            // in the future, this will be done by the uam parser itself (because uam needs to be able to have a real structure.name)
+                            // then we will switch on it
+                            const uamName = std.meta.stringToEnum(enum { lockin }, uam.name) orelse unreachable; // TODO report error bad uam
+                            switch (uamName) {
+                                .lockin => {
+                                    if (uam.args.len != 0) unreachable; // TODO support @lockin("error message")
+                                    try resFields.append(
+                                        .{ .field = structure.name, .magic = .lockin },
+                                    );
+                                },
+                            }
+                        },
+                        else => try resFields.append(
+                            .{ .field = structure.name, .magic = .{ .none = structure } },
+                        ),
+                    }
                 }
 
                 return Structure.init(gen, null, .{ .struc = .{ .values = resFields.toOwnedSlice() } });
@@ -437,15 +470,54 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
             var resMap = std.ArrayList(struct { name: []const u8, id: usize }).init(alloc);
             try out.writeAll("    const start = parser.cpos;");
             for (struc.values) |*value| {
-                const fnid = generator.nextID();
-                try nextCodegens.append(.{ .structure = &value.structure, .fnid = fnid });
+                switch (value.magic) {
+                    .none => |*substructure| {
+                        const fnid = generator.nextID();
+                        try nextCodegens.append(.{ .structure = substructure, .fnid = fnid });
 
-                if (value.field) |nme| {
-                    const id = generator.nextID();
-                    try out.print("    const _{} = ", .{id});
-                    try resMap.append(.{ .name = nme, .id = id });
-                } else try out.print("    _ = ", .{});
-                try out.print("try _{}(parser);\n", .{fnid});
+                        if (value.field) |nme| {
+                            const id = generator.nextID();
+                            try out.print("    const _{} = ", .{id});
+                            try resMap.append(.{ .name = nme, .id = id });
+                        } else try out.print("    _ = ", .{});
+                        try out.print("try _{}(parser);\n", .{fnid});
+                    },
+                    .lockin => {
+                        const nextFunctionHalf = generator.nextID();
+                        const randomid = generator.nextID();
+                        // also we need to loop over resmap and pass those too
+                        // this is where catch on blocks would be useful
+                        // (because errdefer can't return something) (that would be a solution too)
+                        // {
+                        //     errdefer return reportError();
+                        // }
+                        try out.print(
+                            \\    return _{0}(parser, start
+                        , .{
+                            nextFunctionHalf,
+                        });
+                        for (resMap.items) |rv| {
+                            try out.print(", _{}", .{rv.id});
+                        }
+                        try out.print(") catch @panic(\"locked in item did not pass ({})\");", .{randomid});
+                        try out.writeAll("}");
+                        try out.print("fn _{0}(parser: *Parser, start: usize", .{nextFunctionHalf});
+                        for (resMap.items) |rv| {
+                            try out.print(", _{}: anytype", .{rv.id});
+                        }
+                        try out.print(") ParseError!_{} {{\n", .{structure.typeNameID});
+                        try out.writeAll(
+                            \\    const sb = parser.startBit();
+                            \\    errdefer parser.cancelBit(sb);
+                        );
+
+                        // ) catch @panic("locked in item did not pass"); // TODO error reporting
+                        // \\}}
+                        // \\fn _{0}(parser: *Parser) ParseError!_{structure.typeNameID} {{
+                        // :: return parse second half catch panic
+                        // fn _{0}
+                    },
+                }
             }
 
             try out.writeAll("    const end = parser.cpos;");
@@ -638,7 +710,8 @@ pub const Generator = struct {
             try out.writeAll(";\n");
         }
 
-        try out.writeAll("\n" ++
+        try out.writeAll(
+            \\
             \\//.
             \\//.
             \\//.
@@ -656,7 +729,8 @@ pub const Generator = struct {
             \\//.
             \\//.
             \\//.
-        ++ "\n\n");
+            \\
+        ++ "\n");
 
         try out.writeAll(@embedFile("parser_header.zig"));
         // I would use ++ on embedFile but current zig makes that include the file twice, once without \n\n and once with it.

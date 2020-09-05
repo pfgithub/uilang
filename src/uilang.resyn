@@ -3,33 +3,33 @@ file = expression[';'];
 expression =
 	| #suffix(suffixop)<suffixop>
 	| vardecl
+	| function
 	| returnstatement
 	| htmlelement
 	| htmlattribute
 	| parens
 	| block
-	| function
 	| variable
 	| number
 	| string
 ;
 
-vardecl = identifier '=' expression;
+vardecl = ('let'<let> | 'const'<const_> | 'state'<state> | 'trigger'<trigger>)<vartype> identifier '=' #lockin() expression;
 // returns from a function, not a block or some parenthesis
 returnstatement = 'return' expression;
-htmlelement = '.' identifier parens;
-htmlattribute = ':' identifier '=' expression;
+htmlelement = '.' #lockin() identifier parens;
+htmlattribute = ':' #lockin() identifier '=' expression;
 
 // returns the last expression
-parens = '(' expression[','] ')';
+parens = '(' #lockin() expression[','] ')';
 // can be broken out of (or returned if it's a function block)
-block = '{' expression[';'] '}';
+block = '{' #lockin() expression[';'] '}';
 
 function = ('widget'<widget> | 'fn'<function>)<kind> '(' identifier[','] ')' expression;
 
 variable = identifier;
 number = :number;
-string = :string_start<> (:string | :string_escape<escape>)[]<bits> :string_end<>;
+string = :string_start<> #lockin() (:string | :string_escape<escape>)[]<bits> :string_end<>;
 
 suffixop = '!';
 
