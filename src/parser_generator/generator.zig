@@ -78,7 +78,7 @@ const Structure = struct {
     }
     fn printType(structure: Structure, out: anytype, mode: PrintMode) @TypeOf(out).Error!void {
         switch (structure.kind) {
-            .none => try out.writeAll("u1"), // TODO u0 when stage2 is the default zig compiler
+            .none => try out.writeAll("void"), // TODO u0 when stage2 is the default zig compiler
             .unattached_magic => unreachable, // TODO report error unattached magic
             .struc => |sct| {
                 try out.writeAll("struct {\n");
@@ -136,7 +136,7 @@ const Structure = struct {
             .value => |valu| {
                 try writeTypeNameFor(out, valu);
             },
-            .token => try out.writeAll("[]const u8"),
+            .token => |tk| if (tk.expected == null) try out.writeAll("[]const u8") else try out.writeAll("Token"),
             .optional => |optv| {
                 try out.writeAll("?");
                 try optv.print(out, mode);
@@ -561,11 +561,12 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
             );
         },
         .token => |tk| {
-            try out.print("    return (try _parseToken(parser, .{}, ", .{tk.kind});
-            if (tk.expected) |xpcdt| try printZigString(xpcdt, out)
-            //zig fmt
+            try out.writeAll("    return ");
+            try out.print("    (try _parseToken(parser, .{}, ", .{tk.kind});
+            if (tk.expected) |xpcdt| try printZigString(xpcdt, out) //zig fmt
             else try out.writeAll("null");
-            try out.writeAll(")).text;\n");
+            if (tk.expected == null) try out.writeAll(")).text;\n") //zig fmt
+            else try out.writeAll("));\n");
         },
         .array_only => |ao| {
             // item, joiner
@@ -586,7 +587,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                 \\
             , .{ ao.item.typeNameID, itemFnid, joinerFnid, stringIf(ao.joiner == null, "//", "") });
         },
-        .none => try out.writeAll("    return 0;"),
+        .none => try out.writeAll("    return {};"),
     }
     try out.writeAll(
         \\}
