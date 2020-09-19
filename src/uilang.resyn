@@ -25,11 +25,11 @@ htmlattribute = ':' #lockin() identifier '=' expression;
 // returns the last expression
 parens = '(' #lockin() expression[','] ')';
 // can be broken out of (or returned if it's a function block)
-block = '{' #lockin() expression[';'] '}';
+block = '{' #lockin() expression[';']<decls> '}';
 
-function = ('widget'<widget> | 'fn'<function>)<kind> #lockin() '(' identifier[','] ')' expression;
+function = ('widget'<widget> | 'fn'<function>)<kind> #lockin() '(' identifier[',']<args> ')' expression;
 
-variable = identifier;
+variable = identifier<name> .;
 number = :number;
 string = :string_start<> #lockin() (:string | :string_escape<escape>)[]<bits> :string_end<>;
 

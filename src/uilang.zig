@@ -45,13 +45,13 @@ fn allocDupe(alloc: *Alloc, a: anytype) !*@TypeOf(a) {
 
 const LaterType = union(enum) {
     uninitialized_type: struct {
-        environment: *Environment,
+        env: *Environment,
         type_code: *ast.Expression,
     },
     // in this case, the expression needs to be evaluated and then latertype will actually
     // be storing the result ir to be inserted with the vardecl
     uninitialized_expression: struct {
-        environment: *Environment,
+        env: *Environment,
         expression_code: *ast.Expression,
     },
     in_progress: void,
@@ -65,11 +65,13 @@ const LaterType = union(enum) {
         lt.* = .in_progress;
         switch (copy) {
             .uninitialized_type => |unin| {
-                const env = unin.environment;
+                const env = unin.env;
                 const type_code = unin.type_code;
-                const exprval = try evaluateExpr(env, type_code.*);
-                if (exprval.t_type != .t_type) {
+                const exprval = try evaluateExpr(env, type_code.*, .function);
+                if (exprval.t_type.tkind != .t_type) {
                     // uh oh
+                    std.debug.warn("Got {}\n", .{@tagName(exprval.t_type.tkind)});
+                    std.debug.warn("Got {}\n", .{exprval});
                     return reportError("Expected type, got {}");
                 }
                 // comptimeEval(exprval.ir) // what does this do? idk, something.
@@ -81,9 +83,9 @@ const LaterType = union(enum) {
                 };
             },
             .uninitialized_expression => |uninexpr| {
-                const env = uninexpr.environment;
+                const env = uninexpr.env;
                 const exprcode = uninexpr.expression_code;
-                const exprval = try evaluateExpr(env, exprcode.*);
+                const exprval = try evaluateExpr(env, exprcode.*, .function);
                 const allocdir = try allocDupe(env.alloc, exprval.ir);
                 lt.* = .{
                     .initialized = .{ .ir = allocdir, .t_type = exprval.t_type },
@@ -104,9 +106,9 @@ const DeclInfo = struct {
         return DeclInfo{
             .kind = kind,
             .decl_type = if (typev) |tv|
-                LaterType{ .uninitialized_type = .{ .environment = env, .type_code = tv } }
+                LaterType{ .uninitialized_type = .{ .env = env, .type_code = tv } }
             else
-                LaterType{ .uninitialized_expression = .{ .environment = env, .expression_code = valuev } },
+                LaterType{ .uninitialized_expression = .{ .env = env, .expression_code = valuev } },
             .jsname = try createJSSafeName(alloc, name, switch (kind) {
                 // TODO if this miscompiles, move it into a new function and have it return.
                 .state => "$",
@@ -122,17 +124,28 @@ const DeclInfo = struct {
 const Environment = struct {
     alloc: *Alloc,
     parent: ?*Environment,
-    catchReturns: bool, // if this environment layer catches return statements
+    env_cfg: EnvironmentConfig,
     // deferStatements: unmanagedArrayList(something), for if we ever do defer statements
     _variables: std.StringHashMap(DeclInfo),
+    const ControlFlowCatches = union(enum) {
+        none: void,
+        /// if this env layer catches return statements (eg fn() {if(true) {return}}) returns from the fn
+        returns: void,
+        /// if this env layer catches break statements (eg while(true) {break;}). if a label is provided,
+        /// only catches for break statements with that label (eg blk: {break :blk 0;})
+        breaks: ?[]const u8,
+    };
     const EnvironmentConfig = struct {
-        catchReturns: bool,
+        // what control flow statements this environment catches
+        catches: ControlFlowCatches = .none,
+        /// if control flow can pass up through this layer (eg blk: fn() break :blk) is not allowed
+        allow_cf_passthrough: bool = true,
     };
     fn init(alloc: *Alloc, parent: ?*Environment, config: EnvironmentConfig) Environment {
         return Environment{
             .alloc = alloc,
             .parent = parent,
-            .catchReturns = config.catchReturns,
+            .env_cfg = config,
             ._variables = std.StringHashMap(DeclInfo).init(alloc),
         };
     }
@@ -166,11 +179,20 @@ fn reportError(msg: []const u8) ReportedError {
     return ReportedError.Reported;
 }
 
-const Type = union(enum) {
-    unit, // the value cannot be used, there is no value.
-    t_type, // represents a type. only available at compiletime.
+const Type = struct {
+    // should these be a property of the type? they are a property of the variable
+    mode: enum { variable, constant, watchable },
+    tkind: union(enum) {
+        empty, // there is no value. like `never` in typescript.
+        unit, // there is one value.
+        t_type, // represents a type. only available at comptime.
+        func, // any function. will include args and return type in the future.
+        int: u8, // an integer, max i54
+        uint: u8, // a uint, max u53 (higher requires some >>> mess)
+        float, // a f64.
+    },
 };
-const ExprEvalResult = struct {
+const EvalExprResult = struct {
     t_type: Type,
     ir: IR,
 };
@@ -179,53 +201,62 @@ const EvalExprError = ReportedError || error{OutOfMemory};
 // if we do result location stuff, we can skip a bit
 // resultLocation: struct {result: Type, outname: []const u8}
 // -> struct {result: Type}
-fn evaluateExprs(environment: *Environment, decls: []ast.Expression) EvalExprError!ExprEvalResult {
+fn evaluateExprs(env: *Environment, decls: []ast.Expression, mode: ExecutionMode) EvalExprError!EvalExprResult {
     // 1: hoist vardecls
     for (decls) |decl| switch (decl) {
         .vardecl => |vd| {
-            // add decl to environment
+            // add decl to env
             const vt: DeclInfo.DeclKind = switch (vd.vartype) {
                 .let => .let,
                 .const_ => .const_,
                 .state => .state,
                 .trigger => .trigger,
             };
-            try environment.declare(vd.name.*, vt, if (vd.ttype) |tt| tt.expression else null, vd.expression);
+            try env.declare(vd.name.*, vt, if (vd.ttype) |tt| tt.expression else null, vd.expression);
         },
         else => {}, // ok
     };
 
-    var resIR = std.ArrayList(IR).init(environment.alloc);
+    var resIR = std.ArrayList(IR).init(env.alloc);
 
     // 2: evaluate expressions
     for (decls) |decl| {
-        const resultValue = try evaluateExpr(environment, decl);
-        if (resultValue.t_type != .unit) return reportError("Expected void return value");
+        const resultValue = try evaluateExpr(env, decl, mode);
+        // if res type is empty, check that this is at the end, else found unreachable code
+        if (resultValue.t_type.tkind != .unit) return reportError("Expected void return value");
         try resIR.append(resultValue.ir);
     }
 
-    // if any of those decls return, the info will be written to environment
+    // if any of those decls return, the info will be written to env
     // this can be used to determine the return type
-    return ExprEvalResult{
-        .t_type = .unit,
+    return EvalExprResult{
+        .t_type = .{ .tkind = .unit, .mode = .constant },
         .ir = IR{ .block = resIR.toOwnedSlice() },
     };
 }
 
 /// store ir value into to_type, coercing if needed.
-fn storeTypeIntoType(value: IR, from_type: Type, to_type: Type) EvalExprError!ExprEvalResult {
+fn storeTypeIntoType(value: IR, from_type: Type, to_type: Type) EvalExprError!EvalExprResult {
     if (!std.meta.eql(from_type, to_type)) return reportError("Type {} does not fit into type {}");
-    return ExprEvalResult{
+    return EvalExprResult{
         .t_type = to_type,
         .ir = value,
     };
 }
 
-fn evaluateExpr(environment: *Environment, decl: ast.Expression) EvalExprError!ExprEvalResult {
+const ExecutionMode = enum {
+    function, // normal top to bottom run code
+    widget, // weird watchable code
+};
+
+fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) EvalExprError!EvalExprResult {
     switch (decl) {
+        // TODO note that constants cannot be set to a watchable value
+        // TODO make watchability part of the type system
+        // {const: bool, watchable: bool, typev: union(enum) {…}}
         .vardecl => |vd| {
-            // assert the variable is declared in this layer of environment first
-            const decl_info = environment.get(vd.name.*) orelse return reportError("Variable not defined");
+            // make sure the variable is declared in this layer of env first
+            const decl_info = env.get(vd.name.*) orelse return reportError("Variable not defined");
 
             // initialize the type (if it has not already been initialized)
             try decl_info.decl_type.initialize();
@@ -233,16 +264,28 @@ fn evaluateExpr(environment: *Environment, decl: ast.Expression) EvalExprError!E
             // check if the initializer ir has already been created (eg a variable with no type specified will do this)
             const rir = decl_info.decl_type.initialized.ir orelse blk: {
                 // create the initial value
-                const initial_value = try evaluateExpr(environment, vd.expression.*);
+                const initial_value = try evaluateExpr(env, vd.expression.*, .function);
 
                 // compare the expected type (from decl_info) with the actual type (from initial_value) and store it
                 const stored = try storeTypeIntoType(initial_value.ir, initial_value.t_type, decl_info.decl_type.initialized.t_type);
 
-                break :blk try allocDupe(environment.alloc, stored.ir);
+                break :blk try allocDupe(env.alloc, stored.ir);
             };
 
-            return ExprEvalResult{
-                .t_type = .unit,
+            switch (mode) {
+                .function => switch (vd.vartype) {
+                    .state => return reportError("State is not allowed in a function context"),
+                    .trigger => return reportError("Let is not allowed in a function context"),
+                    else => {},
+                },
+                .widget => switch (vd.vartype) {
+                    .let => return reportError("Let is not allowed in a widget context"),
+                    else => {},
+                },
+            }
+
+            return EvalExprResult{
+                .t_type = .{ .tkind = .unit, .mode = .constant },
                 .ir = switch (vd.vartype) {
                     .let => @panic("TODO let"),
                     .const_ => IR{ .vardecl = .{ .jsname = decl_info.jsname, .reassign = false, .initial = rir } },
@@ -251,16 +294,170 @@ fn evaluateExpr(environment: *Environment, decl: ast.Expression) EvalExprError!E
                 },
             };
         },
-        .function => |fnction| {
-            std.debug.panic("TODO function", .{});
+        .function => |func| {
+            const fn_kind = @as(@TagType(@TypeOf(func.kind)), func.kind);
+            if (func.args.len > 0) @panic("TODO fn args");
+
+            // fn kind determines some stuff
+            // a widget fn puts control flow and stuff in special stuff
+            // fn() {
+            //    state counted = 0;
+            //    counted += 1; // this is fine
+            // }
+            // widget() {
+            //    state counted = 0;
+            //    counted += 1; // not ok I guess idk
+            //    const x = counted + 1; // does this change with counted? I think so?
+            // }
+
+            const bodyv = try evaluateExprInNewEnv(env, func.expression.*, .{
+                .catches = .returns,
+                .allow_cf_passthrough = false,
+            }, .widget);
+            // bodyv.t_type is the fn return type. ensure that matches the expected provided return type.
+
+            return EvalExprResult{
+                .t_type = .{ .tkind = .func, .mode = .constant },
+                .ir = IR{
+                    .func = .{
+                        .body = try allocDupe(env.alloc, bodyv.ir),
+                    },
+                },
+            };
+        },
+        .block => |block| {
+            var thisenv = Environment.init(env.alloc, env, .{});
+
+            return try evaluateExprs(&thisenv, block.decls, mode);
+        },
+        .variable => |varbl| {
+            // how to decide if the result of this expression should be watched or not?
+            //     a + 1
+            // in a fn, that should just do a.value + 1
+            // in a widget though, that should probably do a.watch(nv => nv + 1)
+            // ok
+            //     const somevalue = a + 1;
+            // that should uuh
+            // not be allowed?
+            // (in widget, idk about fn)
+            //     .div(somevalue + 1)
+            // that should somevalue.watch(nv => nv + 1)
+            //     somevalue += 1;
+            // in widget, that should not be allowed
+            //     fn() somevalue + 1
+            // that should somevalue.value + 1 because it's in a normal fn now, not a widget anymore
+            if (std.mem.eql(u8, varbl.name.*, "i54")) {
+                return EvalExprResult{
+                    .t_type = .{ .tkind = .t_type, .mode = .constant },
+                    .ir = IR{
+                        .t_type = .{ .mode = .constant, .tkind = .{ .int = 54 } },
+                    },
+                };
+                // TODO not this. maybe put types in a part of the stdlib you can
+                // usingnamespace or something, whatever it is, not this.
+            }
+
+            const decl_info = env.get(varbl.name.*) orelse return reportError("Variable not defined");
+
+            try decl_info.decl_type.initialize();
+
+            if (decl_info.decl_type.initialized.t_type.mode == .watchable) {
+                const baseir = try allocDupe(env.alloc, IR{ .varget_w = decl_info.jsname });
+                const dependencArr = try env.alloc.alloc(IR, 1);
+                dependencArr[0] = IR{ .varget_w = decl_info.jsname };
+                // (watchable [dependency list] [expression])
+                return EvalExprResult{
+                    .t_type = decl_info.decl_type.initialized.t_type,
+                    .ir = IR{ .watchable = .{ .dependencies = dependencArr, .value = baseir } },
+                };
+            }
+            return EvalExprResult{
+                .t_type = decl_info.decl_type.initialized.t_type,
+                .ir = IR{ .varget = decl_info.jsname },
+            };
         },
         else => std.debug.panic("TODO .{}", .{@tagName(decl)}),
     }
-    return ExprEvalResult{
+    return EvalExprResult{
         .t_type = .unit,
     };
 }
 
+// eg blk: (expr) will run this with .{.blk_name = "blk"} eg
+// so you know it catches `break :blk`
+fn evaluateExprInNewEnv(env: *Environment, decl: ast.Expression, block_opts: Environment.EnvironmentConfig, mode: ExecutionMode) EvalExprError!EvalExprResult {
+    var thisenv = Environment.init(env.alloc, env, block_opts);
+
+    return try evaluateExpr(&thisenv, decl, mode);
+}
+
+// {
+//   if(one) {if(two) return 1;}
+//   return 2;
+// }
+//
+// ok idk
+// (() => {
+//    if(one) (() => {if(two) return 1)}();
+//    return 2;
+// })()
+//
+// for now would it be bad to
+// (block blockid
+//    (breakblk *blockiid)
+// )
+// note that breakblk can't break up above a function line
+// (block blockid (fn (breakblk *blockid))) is not ok and will error.
+// and then handle it in codegen?
+// sounds ok
+// same with defers.
+// defers run before every breakblk or before the end of the block
+// I guess we can put a default breakblk at the end of each block,
+// no implicit breakblk void
+
+// ok with watchable is it has to be finally wrapped at the use site
+// so .div (somefn(somevalue + 1))
+// how does that work?
+// well: if somefn accepts a watchable arg, the watchable is wrapped
+// at the level of ō.watch(() => somevalue.value + 1, [somevalue])
+// if somefn does not have a watchablae arg though
+// ō.watch(somefn(somevalue.value + 1), [somevalue])
+// neat! also, .div always accepts a watchable arg so there's no
+// chance it will be dumb and extend the watch too high up
+// this is simple and this is the exact reason for making a language
+// rather than messing with typescript and babel transformations
+// this is actually getting somewhere wow amazing
+
+// !!
+// outer_block: {
+//   inner_block: {
+//     console.log('1');
+//     break outer_block; // breaks out of both inner_block and outer_block
+//     console.log(':-('); // skipped
+//   }
+//   console.log('2'); // skipped
+// }
+// javascript has labeled blocks
+// just have to pass the return value through an unnamed variable
+// also, defer statements can be inserted before the break
+
+// so::
+// {
+//   if(one) {if(two) return 1;}
+//   return 2;
+// }
+// ->
+// var returnvalue_2;
+// outerblk_1: {
+//   if(one) {if(two) {returnvalue_2 = 1; break outerblk_1;}}
+//   return 2;
+// }
+// returnvalue_2; // huh. there's no way to do this well really. this will require a codegen mess.
+
+// it may be better to do this the zir way
+// idk what that is but it's like instead of a(b(c)) it's 1 = a; 2 = b(1); 3 = c(2);
+// that makes some codegen easier and some harder
+// eg blocks require setting a variable to return a value
 const IR = union(enum) {
     vardecl: struct {
         reassign: bool,
@@ -282,7 +479,24 @@ const IR = union(enum) {
         newval: *IR,
     },
     block: []IR,
-    watchable: *IR,
+    func: struct {
+        body: *IR,
+    },
+    /// represents a watchable ir bit
+    /// $watchablevar + 1
+    /// ::: (watchable $watchablevar (fn (varget_w $watchablevar))) + 1
+    /// ::: (watchable $watchablevar (fn (add (varget_w $watchablevar) (1))))
+    /// but what if instead of this, @typeOf(varget_w $watchablevar) was .watchable = true
+    /// and instead of watchable being ir, callers knew
+    /// ok tbh I have no idea what I'm doing
+    /// the reason for putting it in ir is so it can codegen
+    /// because otherwise there's no way to codegen it
+    /// so I do think watchable is a good idea I guess idk
+    /// maybe fn is unnecessary, ir can do that itself
+    watchable: struct {
+        dependencies: []IR, // struct{dependenc: IR, mapnme: []const u8}?
+        value: *IR,
+    },
     number: f64,
     string: []const u8,
     htmlelement,
@@ -291,11 +505,13 @@ const IR = union(enum) {
 
     fn print(ir: IR, out: anytype, indent: usize) @TypeOf(out).Error!void {
         switch (ir) {
-            .vardecl => |vd| {
-                try out.print("const {} = ", .{vd.jsname});
-                try vd.initial.print(out, indent);
-                try out.writeAll(";");
-            },
+            // .vardecl => |vd| {
+            //     // TODO change this to only work inside blocks
+            //     // otherwise expressions shouldn't end with ;
+            //     try out.print("const {} = ", .{vd.jsname});
+            //     try vd.initial.print(out, indent);
+            //     try out.writeAll(";");
+            // },
             else => try out.print("ō.TODO(\"{}\")", .{@tagName(ir)}),
         }
     }
@@ -315,6 +531,8 @@ const IR = union(enum) {
 // 		.button("--", :onclick = fn() counted -= 1),
 // 	);
 // }
+// a += 5;
+// void a += 5 in js?
 
 // ->
 
@@ -353,9 +571,9 @@ pub fn main() !void {
 
     const out = std.io.getStdOut().writer();
 
-    var renv = Environment.init(alloc, null, .{ .catchReturns = false });
+    var renv = Environment.init(alloc, null, .{});
     defer renv.deinit();
 
-    var resv = try evaluateExprs(&renv, parsed);
+    var resv = try evaluateExprs(&renv, parsed, .function);
     try resv.ir.print(out, 0);
 }
