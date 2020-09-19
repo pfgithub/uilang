@@ -58,6 +58,7 @@ fn printComponent(component: parser.Component, out: anytype) @TypeOf(out).Error!
             }
             try out.writeAll(")");
         },
+        .force_struct => try out.writeAll("."),
     }
 }
 

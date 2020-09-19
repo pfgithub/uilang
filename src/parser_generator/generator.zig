@@ -43,6 +43,7 @@ const MagicType = union(enum) {
 };
 
 const StructureKind = union(enum) {
+    none,
     unattached_magic: MagicType,
     unio: struct {
         values: []UnionField,
@@ -77,6 +78,7 @@ const Structure = struct {
     }
     fn printType(structure: Structure, out: anytype, mode: PrintMode) @TypeOf(out).Error!void {
         switch (structure.kind) {
+            .none => try out.writeAll("u1"), // TODO u0 when stage2 is the default zig compiler
             .unattached_magic => unreachable, // TODO report error unattached magic
             .struc => |sct| {
                 try out.writeAll("struct {\n");
@@ -176,6 +178,7 @@ const Structure = struct {
                 try ao.item.printDecl(out);
                 if (ao.joiner) |jnr| try jnr.printDecl(out);
             },
+            .none => {},
         }
     }
     fn init(generator: *Generator, name: ?[]const u8, kind: StructureKind) Structure {
@@ -187,6 +190,7 @@ const Structure = struct {
     }
     fn createForComponent(alloc: *Alloc, component: parser.Component, gen: *Generator) OOM!Structure {
         switch (component) {
+            .force_struct => return Structure.init(gen, null, .none),
             .or_op => |or_components| {
                 var resFields = std.ArrayList(UnionField).init(alloc);
 
@@ -237,6 +241,7 @@ const Structure = struct {
                             .lockin => try resFields.append(.{ .field = structure.name, .magic = .lockin }),
                             else => unreachable, // TODO error can't use that type of uam here
                         },
+                        .none => {},
                         else => try resFields.append(
                             .{ .field = structure.name, .magic = .{ .none = structure } },
                         ),
@@ -581,6 +586,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                 \\
             , .{ ao.item.typeNameID, itemFnid, joinerFnid, stringIf(ao.joiner == null, "//", "") });
         },
+        .none => try out.writeAll("    return 0;"),
     }
     try out.writeAll(
         \\}
@@ -659,6 +665,7 @@ fn printComponent(component: parser.Component, out: anytype) @TypeOf(out).Error!
             }
             try out.writeAll(")");
         },
+        .force_struct => try out.writeAll("."),
     }
 }
 

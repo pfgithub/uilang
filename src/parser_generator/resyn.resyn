@@ -12,6 +12,7 @@ component =
 	| parens
 	| string
 	| magic
+	| force_struct
 ;
 token_ref = ':' #lockin() :identifier<token>;
 parens = '(' #lockin() component ')';
@@ -30,3 +31,4 @@ nameset = '<' #lockin() :identifier?<name> '>';
 // in the future, #lockin() may be used after '[' for better error messages
 array = '[' #lockin() component? ']';
 optional = '?';
+force_struct = '.';
