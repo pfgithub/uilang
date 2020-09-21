@@ -16,22 +16,16 @@ const counter_0 = () => {
 // eg `ō.watch(v => v + 1, [$counted_2])`
 // but there's no reason to make a watchable out of a watchable variable so uuh
 var _3_ = () => {
-    var _1_ = undefined;
-    _1_blk_: {
-        var _5_ = 0;
-        var $counted_2 = ō.watchable(_5_);
-        var _9_ = "counter";
-        var _9_ = ō.attr("class", _9);
-        var _10_ = " ";
-        var _11_ = $counted_2;
-        var _12_ = " ";
-        var _8_ = ō.html("span", _10_, _11_, _12_);
-        var _6_ = ō.html("div", _7_, _8_);
-        _1_ = _6_;
-        break _1_blk;
-    }
-    var _4_ = _1_;
-    return _4_;
+    var _4_ = 0;
+    var $counted_2 = ō.watchable(_4_);
+    var _8_ = "counter";
+    var _8_ = ō.attr("class", _8);
+    var _9_ = " ";
+    var _10_ = $counted_2;
+    var _11_ = " ";
+    var _7_ = ō.html("span", _9_, _10_, _11_);
+    var _5_ = ō.html("div", _6_, _7_);
+    return _5_;
 };
 var counter_0 = _3_;
 

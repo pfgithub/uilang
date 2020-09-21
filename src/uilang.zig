@@ -608,7 +608,7 @@ const IR = union(enum) {
     // there should be a version of this for expressions because not everything needs to be like this
     // if the thing can be printed as an expression, print it as one
     // that is actually hard to find out though. return .div(blk: {break :blk 2}); eg
-    fn print(ir: IR, out: anytype, indent: usize, write_to: ?usize) @TypeOf(out).Error!void {
+    fn print(ir: IR, out: anytype, indent: usize, write_to: ?usize, return_blkid: usize) @TypeOf(out).Error!void {
         const idnt = IndentWriter{ .count = indent };
         switch (ir) {
             // .vardecl => |vd| {
@@ -625,7 +625,7 @@ const IR = union(enum) {
                 }
                 const nidnt = if (blk.blockid) |_| indent + 1 else indent;
                 for (blk.body) |blkir| {
-                    _ = try print(blkir, out, nidnt, null);
+                    _ = try print(blkir, out, nidnt, null, return_blkid);
                 }
                 if (blk.blockid) |_| try out.print("{}}}\n", .{idnt});
                 if (write_to) |wt| {
@@ -635,13 +635,13 @@ const IR = union(enum) {
             },
             .vardecl => |vd| {
                 const initialout = getNewID();
-                try print(vd.initial.*, out, indent, initialout);
+                try print(vd.initial.*, out, indent, initialout, return_blkid);
                 try out.print("{}var {} = _{}_;\n", .{ idnt, vd.jsname, initialout });
                 if (write_to) |wt| try out.print("{}var _{}_ = undefined;\n", .{ idnt, wt });
             },
             .vardecl_w => |vd| {
                 const initialout = getNewID();
-                try print(vd.initial.*, out, indent, initialout);
+                try print(vd.initial.*, out, indent, initialout, return_blkid);
                 try out.print("{}var {} = ō.watchable(_{}_);\n", .{ idnt, vd.jsname, initialout });
                 if (write_to) |wt| try out.print("{}var _{}_ = undefined;\n", .{ idnt, wt });
             },
@@ -668,23 +668,34 @@ const IR = union(enum) {
                     idnt,
                     write_to.?,
                 });
-                const bodyresid = getNewID();
-                try print(func.body.*, out, indent + 1, bodyresid);
-                try out.print("{}    return _{}_;\n", .{ idnt, bodyresid });
+                switch (func.body.*) {
+                    .block => |blk| for (blk.body) |blkir| {
+                        _ = try print(blkir, out, indent + 1, null, blk.blockid orelse std.math.maxInt(usize));
+                    },
+                    else => {
+                        const bodyresid = getNewID();
+                        try print(func.body.*, out, indent + 1, bodyresid, std.math.maxInt(usize));
+                        try out.print("{}    return _{}_;\n", .{ idnt, bodyresid });
+                    },
+                }
                 try out.print("{}}};\n", .{idnt});
             },
             .breakv => |bv| {
                 var wtv = getNewID();
-                try print(bv.value.*, out, indent, wtv);
-                try out.print("{}_{}_ = _{}_;\n", .{ idnt, bv.blkid, wtv });
-                try out.print("{}break _{}_blk;\n", .{ idnt, bv.blkid });
+                try print(bv.value.*, out, indent, wtv, return_blkid);
+                if (bv.blkid == return_blkid) {
+                    try out.print("{}return _{}_;\n", .{ idnt, wtv });
+                } else {
+                    try out.print("{}_{}_ = _{}_;\n", .{ idnt, bv.blkid, wtv });
+                    try out.print("{}break _{}_blk;\n", .{ idnt, bv.blkid });
+                }
             },
             .html => |hl| {
                 var startID = global_id;
                 for (range(hl.args.len)) |_| global_id += 1;
                 for (hl.args) |hlarg, i| {
                     const hlID = startID + i;
-                    try print(hlarg, out, indent, hlID);
+                    try print(hlarg, out, indent, hlID, return_blkid);
                 }
                 if (write_to) |wt| {
                     try out.print("{}var _{}_ = ō.html(", .{ idnt, wt });
@@ -699,7 +710,7 @@ const IR = union(enum) {
             },
             .attr => |ar| {
                 var arid = getNewID();
-                try print(ar.value.*, out, indent, arid);
+                try print(ar.value.*, out, indent, arid, return_blkid);
                 if (write_to) |wt| {
                     try out.print("{}var _{}_ = ō.attr(", .{ idnt, arid });
                     try printJSString(ar.name, out);
@@ -794,5 +805,5 @@ pub fn main() !void {
     defer renv.deinit();
 
     var resv = try evaluateExprs(&renv, parsed, .function);
-    try resv.ir.print(out, 0, null);
+    try resv.ir.print(out, 0, null, std.math.maxInt(usize));
 }
