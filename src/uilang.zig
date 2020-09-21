@@ -2,14 +2,14 @@ const std = @import("std");
 const ast = @import("uilang_parser");
 const Alloc = std.mem.Allocator;
 
-const ID = u64;
+const ID = usize;
 
-// in case this is ever made multithreaded, each thread will need a new starting point for this id (c pthread_self() * like std.math.maxInt(u50))
-threadlocal var id: ID = 0;
+// in case this is ever made multithreaded, each thread will need a new starting point for this global_id (c pthread_self() * like std.math.maxInt(u50))
+threadlocal var global_id: ID = 0;
 
 fn getNewID() usize {
-    defer id += 1;
-    return id;
+    defer global_id += 1;
+    return global_id;
 }
 
 // prefix is used eg some variables want a prefix
@@ -59,6 +59,7 @@ const LaterType = union(enum) {
         t_type: Type,
         ir: ?*IR,
     },
+    // TODO: if watchable, return a .kind = .watchable or whatever
     fn initialize(lt: *LaterType) EvalExprError!void {
         if (lt.* == .initialized) return;
         const copy = lt.*;
@@ -128,19 +129,29 @@ const Environment = struct {
     // deferStatements: unmanagedArrayList(something), for if we ever do defer statements
     _variables: std.StringHashMap(DeclInfo),
     const ControlFlowCatches = union(enum) {
-        none: void,
         /// if this env layer catches return statements (eg fn() {if(true) {return}}) returns from the fn
         returns: void,
         /// if this env layer catches break statements (eg while(true) {break;}). if a label is provided,
         /// only catches for break statements with that label (eg blk: {break :blk 0;})
         breaks: ?[]const u8,
     };
+    const CatchesConfig = struct { match: ControlFlowCatches, blkid: usize };
     const EnvironmentConfig = struct {
-        // what control flow statements this environment catches
-        catches: ControlFlowCatches = .none,
+        /// what control flow statements this environment catches
+        catches: ?CatchesConfig = null,
         /// if control flow can pass up through this layer (eg blk: fn() break :blk) is not allowed
         allow_cf_passthrough: bool = true,
     };
+    fn catchControlFlow(me: Environment, ccc: ControlFlowCatches) ?CatchesConfig {
+        if (me.env_cfg.catches) |ctchs| {
+            if (std.meta.eql(ctchs.match, ccc)) return ctchs;
+        }
+        if (me.env_cfg.allow_cf_passthrough) {
+            if (me.parent) |parent| return parent.catchControlFlow(ccc); // enforce tail call for when zig disallows recursion
+            return null;
+        }
+        return null;
+    }
     fn init(alloc: *Alloc, parent: ?*Environment, config: EnvironmentConfig) Environment {
         return Environment{
             .alloc = alloc,
@@ -191,6 +202,9 @@ const Type = struct {
         uint: u8, // a uint, max u53 (higher requires some >>> mess)
         float, // a f64.
         ct_number, // a string number. must be casted into a runtime value to use.
+        html, // a html element.
+        attr, // a html attribute. maybe include more information in the future incl the type of attribute.
+        string, // a string
     },
 };
 const EvalExprResult = struct {
@@ -221,10 +235,20 @@ fn evaluateExprs(env: *Environment, decls: []ast.Expression, mode: ExecutionMode
     var resIR = std.ArrayList(IR).init(env.alloc);
 
     // 2: evaluate expressions
+    var is_unreachable = false;
     for (decls) |decl| {
+        if (is_unreachable) return reportError("Unreachable");
         const resultValue = try evaluateExpr(env, decl, mode);
         // if res type is empty, check that this is at the end, else found unreachable code
-        if (resultValue.t_type.tkind != .unit) return reportError("Expected void return value");
+        switch (resultValue.t_type.tkind) {
+            // TODO
+            // if empty, the block return value should be set to empty. this will say that the block never returns.
+            // if the block's return value is set already, this won't happen.
+            // this is how control flow analysis will work. very simple.
+            .empty => is_unreachable = true,
+            .unit => {},
+            else => return reportError("Expected unit or empty"),
+        }
         try resIR.append(resultValue.ir);
     }
 
@@ -232,7 +256,7 @@ fn evaluateExprs(env: *Environment, decls: []ast.Expression, mode: ExecutionMode
     // this can be used to determine the return type
     return EvalExprResult{
         .t_type = .{ .tkind = .unit, .mode = .constant },
-        .ir = IR{ .block = .{ .blockid = getNewID(), .body = resIR.toOwnedSlice() } },
+        .ir = IR{ .block = .{ .blockid = if (env.env_cfg.catches) |catches| catches.blkid else null, .body = resIR.toOwnedSlice() } },
     };
 }
 
@@ -319,8 +343,9 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             //    const x = counted + 1; // does this change with counted? I think so?
             // }
 
+            const ccfg = Environment.CatchesConfig{ .match = .returns, .blkid = getNewID() };
             const bodyv = try evaluateExprInNewEnv(env, func.expression.*, .{
-                .catches = .returns,
+                .catches = ccfg,
                 .allow_cf_passthrough = false,
             }, .widget);
             // bodyv.t_type is the fn return type. ensure that matches the expected provided return type.
@@ -391,6 +416,60 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                 .ir = IR{ .number = numv.* },
             };
         },
+        .returnstatement => |rs| {
+            const expr = rs.expression;
+            const topenv = env.catchControlFlow(.returns) orelse return reportError("No control flow found");
+            const resultir = try evaluateExpr(env, expr.*, mode);
+            // TODO write the return type to topenv so it knows. (catchControlFlow will have to return the env and accept a *Env ptr)
+            // or if a type is already written, confirm that this matches that.
+            // TODO
+
+            // find where to return by searching up
+            return EvalExprResult{
+                .t_type = .{ .tkind = .empty, .mode = .constant },
+                .ir = IR{ .breakv = .{ .value = try allocDupe(env.alloc, resultir.ir), .blkid = topenv.blkid } },
+            };
+        },
+        .htmlelement => |he| {
+            var argsAL = std.ArrayList(IR).init(env.alloc);
+            for (he.parens.items) |pitm| {
+                const argv = try evaluateExpr(env, pitm, mode);
+                switch (argv.t_type.tkind) {
+                    .html, .attr, .string, .int => {},
+                    else => return reportError("Unsupported type here {}"),
+                }
+                try argsAL.append(argv.ir);
+            }
+            return EvalExprResult{
+                .t_type = .{ .tkind = .html, .mode = .constant },
+                .ir = IR{ .html = .{ .tag = he.tag.*, .args = argsAL.toOwnedSlice() } },
+            };
+        },
+        .htmlattribute => |ha| {
+            const val = try evaluateExpr(env, ha.expression.*, mode);
+            if (std.mem.startsWith(u8, ha.identifier.*, "on")) switch (val.t_type.tkind) {
+                .func => {},
+                else => return reportError("Unsupported type here {}"),
+            } else switch (val.t_type.tkind) {
+                .string => {},
+                else => return reportError("Unsupported type here {}"),
+            }
+            return EvalExprResult{
+                .t_type = .{ .tkind = .attr, .mode = .constant },
+                .ir = IR{ .attr = .{ .name = ha.identifier.*, .value = try allocDupe(env.alloc, val.ir) } },
+            };
+        },
+        .string => |str| {
+            var resTxt = std.ArrayList(u8).init(env.alloc);
+            for (str.bits) |bit| switch (bit) {
+                .string => |txt| try resTxt.appendSlice(txt),
+                .escape => unreachable, // TODO string escapes
+            };
+            return EvalExprResult{
+                .t_type = .{ .tkind = .string, .mode = .constant },
+                .ir = IR{ .string = resTxt.toOwnedSlice() },
+            };
+        },
         else => std.debug.panic("TODO .{}", .{@tagName(decl)}),
     }
 }
@@ -398,9 +477,26 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
 // eg blk: (expr) will run this with .{.blk_name = "blk"} eg
 // so you know it catches `break :blk`
 fn evaluateExprInNewEnv(env: *Environment, decl: ast.Expression, block_opts: Environment.EnvironmentConfig, mode: ExecutionMode) EvalExprError!EvalExprResult {
-    var thisenv = Environment.init(env.alloc, env, block_opts);
+    switch (decl) {
+        .block => |bk| {
+            var thisenv = Environment.init(env.alloc, env, block_opts);
 
-    return try evaluateExpr(&thisenv, decl, mode);
+            return try evaluateExprs(&thisenv, bk.decls, mode);
+        },
+        else => {
+            var thisenv = Environment.init(env.alloc, env, block_opts);
+
+            const rv = try evaluateExpr(&thisenv, decl, mode);
+
+            if (block_opts.catches) |catches| {
+                // const resIR = IR{ .block = .{ .blkid = catches.blkid } };
+                // return rv;
+                return reportError("TODO support evaluateExprInNewEnv non-block with catches");
+            } else {
+                return rv;
+            }
+        },
+    }
 }
 
 // {
@@ -490,12 +586,16 @@ const IR = union(enum) {
         jsname: []const u8,
         newval: *IR,
     },
-    block: struct { blockid: usize, body: []IR },
+    html: struct { tag: []const u8, args: []IR },
+    attr: struct { name: []const u8, value: *IR },
+    breakv: struct { value: *IR, blkid: usize },
+    block: struct { blockid: ?usize, body: []IR },
     func: struct {
         body: *IR,
     },
     // to support bigints, this is []const u8 rather than f64
     number: []const u8,
+    string: []const u8,
     /// represents a watchable ir bit
     /// $watchablevar + 1
     /// ::: (watchable $watchablevar (fn (varget_w $watchablevar))) + 1
@@ -511,12 +611,13 @@ const IR = union(enum) {
         dependencies: []IR, // struct{dependenc: IR, mapnme: []const u8}?
         value: *IR,
     },
-    string: []const u8,
     htmlelement,
     htmlattribute,
     t_type: Type, // only available at comptime
 
     // there should be a version of this for expressions because not everything needs to be like this
+    // if the thing can be printed as an expression, print it as one
+    // that is actually hard to find out though. return .div(blk: {break :blk 2}); eg
     fn print(ir: IR, out: anytype, indent: usize, write_to: ?usize) @TypeOf(out).Error!void {
         const idnt = IndentWriter{ .count = indent };
         switch (ir) {
@@ -551,6 +652,16 @@ const IR = union(enum) {
             .number => |num| {
                 if (write_to) |wt| try out.print("{}var _{}_ = {};\n", .{ idnt, wt, num });
             },
+            .string => |str| {
+                if (write_to) |wt| {
+                    try out.print("{}var _{}_ = ", .{ idnt, wt });
+                    try printJSString(str, out);
+                    try out.writeAll(";\n");
+                }
+            },
+            .varget => |vg| {
+                if (write_to) |wt| try out.print("{}var _{}_ = {};\n", .{ idnt, wt, vg });
+            },
             .func => |func| {
                 if (write_to == null) {
                     // func has no side effects and so it can be safely discarded.
@@ -566,6 +677,39 @@ const IR = union(enum) {
                 try print(func.body.*, out, indent + 1, bodyresid);
                 try out.print("{}    return _{}_;\n", .{ idnt, bodyresid });
                 try out.print("{}}};\n", .{idnt});
+            },
+            .breakv => |bv| {
+                var wtv = getNewID();
+                try print(bv.value.*, out, indent, wtv);
+                try out.print("{}_{}_ = _{}_;\n", .{ idnt, bv.blkid, wtv });
+                try out.print("{}break _{}_blk;\n", .{ idnt, bv.blkid });
+            },
+            .html => |hl| {
+                var startID = global_id;
+                for (range(hl.args.len)) |_| global_id += 1;
+                for (hl.args) |hlarg, i| {
+                    const hlID = startID + i;
+                    try print(hlarg, out, indent, hlID);
+                }
+                if (write_to) |wt| {
+                    try out.print("{}var _{}_ = ō.html(", .{ idnt, wt });
+                    try printJSString(hl.tag, out);
+                    for (range(hl.args.len)) |_, i| {
+                        const rid = startID + i;
+                        try out.writeAll(", ");
+                        try out.print("_{}_", .{rid});
+                    }
+                    try out.writeAll(");\n");
+                }
+            },
+            .attr => |ar| {
+                var arid = getNewID();
+                try print(ar.value.*, out, indent, arid);
+                if (write_to) |wt| {
+                    try out.print("{}var _{}_ = ō.attr(", .{ idnt, arid });
+                    try printJSString(ar.name, out);
+                    try out.print(", _{});\n", .{arid});
+                }
             },
             else => {
                 try out.print("{}", .{idnt});
@@ -585,6 +729,16 @@ const IndentWriter = struct {
 };
 fn range(max: usize) []const void {
     return @as([]const void, &[_]void{}).ptr[0..max];
+}
+
+pub fn printJSString(str: []const u8, out: anytype) !void {
+    try out.writeByte('"');
+    for (str) |char| switch (char) {
+        ' '...'~' => try out.writeByte(char),
+        '\n' => try out.writeAll("\\n"),
+        else => try out.print("\\x{x:0<2}", .{char}),
+    };
+    try out.writeByte('"');
 }
 // we don't have to go too far at first, just do the simplest thing
 // don't overdo it or this will never be completed

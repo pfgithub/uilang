@@ -19,11 +19,11 @@ expression =
 vardecl = ('let'<let> | 'const'<const_> | 'state'<state> | 'trigger'<trigger>)<vartype> #lockin() identifier<name> (':' expression)?<ttype> '=' expression;
 // returns from a function, not a block or some parenthesis
 returnstatement = 'return' expression;
-htmlelement = '.' #lockin() identifier parens;
+htmlelement = '.' #lockin() identifier<tag> parens;
 htmlattribute = ':' #lockin() identifier '=' expression;
 
 // returns the last expression
-parens = '(' #lockin() expression[','] ')';
+parens = '(' #lockin() expression[',']<items> ')';
 // can be broken out of (or returned if it's a function block)
 block = '{' #lockin() expression[';']<decls> '}';
 

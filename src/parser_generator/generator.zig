@@ -649,11 +649,10 @@ fn printComponent(component: parser.Component, out: anytype) @TypeOf(out).Error!
         },
         .string => |stri| {
             try out.writeByte('"');
-            for (stri.bits) |bit|
-                switch (bit) {
-                    .string => |txt| try out.writeAll(txt),
-                    .escape => unreachable, // TODO string escapes
-                };
+            for (stri.bits) |bit| switch (bit) {
+                .string => |txt| try out.writeAll(txt),
+                .escape => unreachable, // TODO string escapes
+            };
             try out.writeByte('"');
         },
         .magic => |magi| {
