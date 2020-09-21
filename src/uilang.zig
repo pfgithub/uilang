@@ -187,9 +187,10 @@ const Type = struct {
         unit, // there is one value.
         t_type, // represents a type. only available at comptime.
         func, // any function. will include args and return type in the future.
-        int: u8, // an integer, max i54
+        int: u8, // an integer, max i53
         uint: u8, // a uint, max u53 (higher requires some >>> mess)
         float, // a f64.
+        ct_number, // a string number. must be casted into a runtime value to use.
     },
 };
 const EvalExprResult = struct {
@@ -231,12 +232,20 @@ fn evaluateExprs(env: *Environment, decls: []ast.Expression, mode: ExecutionMode
     // this can be used to determine the return type
     return EvalExprResult{
         .t_type = .{ .tkind = .unit, .mode = .constant },
-        .ir = IR{ .block = resIR.toOwnedSlice() },
+        .ir = IR{ .block = .{ .blockid = getNewID(), .body = resIR.toOwnedSlice() } },
     };
 }
 
 /// store ir value into to_type, coercing if needed.
 fn storeTypeIntoType(value: IR, from_type: Type, to_type: Type) EvalExprError!EvalExprResult {
+    if (from_type.tkind == .ct_number) {
+        if (to_type.tkind == .int) {
+            return EvalExprResult{
+                .t_type = to_type,
+                .ir = value,
+            };
+        }
+    }
     if (!std.meta.eql(from_type, to_type)) return reportError("Type {} does not fit into type {}");
     return EvalExprResult{
         .t_type = to_type,
@@ -346,7 +355,7 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             // in widget, that should not be allowed
             //     fn() somevalue + 1
             // that should somevalue.value + 1 because it's in a normal fn now, not a widget anymore
-            if (std.mem.eql(u8, varbl.name.*, "i54")) {
+            if (std.mem.eql(u8, varbl.name.*, "i53")) {
                 return EvalExprResult{
                     .t_type = .{ .tkind = .t_type, .mode = .constant },
                     .ir = IR{
@@ -354,7 +363,7 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                     },
                 };
                 // TODO not this. maybe put types in a part of the stdlib you can
-                // usingnamespace or something, whatever it is, not this.
+                // usingnamespace or something. whatever it is, not this.
             }
 
             const decl_info = env.get(varbl.name.*) orelse return reportError("Variable not defined");
@@ -376,11 +385,14 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                 .ir = IR{ .varget = decl_info.jsname },
             };
         },
+        .number => |numv| {
+            return EvalExprResult{
+                .t_type = .{ .tkind = .ct_number, .mode = .constant },
+                .ir = IR{ .number = numv.* },
+            };
+        },
         else => std.debug.panic("TODO .{}", .{@tagName(decl)}),
     }
-    return EvalExprResult{
-        .t_type = .unit,
-    };
 }
 
 // eg blk: (expr) will run this with .{.blk_name = "blk"} eg
@@ -478,10 +490,12 @@ const IR = union(enum) {
         jsname: []const u8,
         newval: *IR,
     },
-    block: []IR,
+    block: struct { blockid: usize, body: []IR },
     func: struct {
         body: *IR,
     },
+    // to support bigints, this is []const u8 rather than f64
+    number: []const u8,
     /// represents a watchable ir bit
     /// $watchablevar + 1
     /// ::: (watchable $watchablevar (fn (varget_w $watchablevar))) + 1
@@ -497,13 +511,14 @@ const IR = union(enum) {
         dependencies: []IR, // struct{dependenc: IR, mapnme: []const u8}?
         value: *IR,
     },
-    number: f64,
     string: []const u8,
     htmlelement,
     htmlattribute,
     t_type: Type, // only available at comptime
 
-    fn print(ir: IR, out: anytype, indent: usize) @TypeOf(out).Error!void {
+    // there should be a version of this for expressions because not everything needs to be like this
+    fn print(ir: IR, out: anytype, indent: usize, write_to: ?usize) @TypeOf(out).Error!void {
+        const idnt = IndentWriter{ .count = indent };
         switch (ir) {
             // .vardecl => |vd| {
             //     // TODO change this to only work inside blocks
@@ -512,10 +527,65 @@ const IR = union(enum) {
             //     try vd.initial.print(out, indent);
             //     try out.writeAll(";");
             // },
-            else => try out.print("ō.TODO(\"{}\")", .{@tagName(ir)}),
+            .block => |blk| {
+                try out.print("{}var _{}_ = undefined;\n", .{ idnt, blk.blockid });
+                try out.print("{}_{}_blk_: {{\n", .{ idnt, blk.blockid });
+                for (blk.body) |blkir| {
+                    _ = try print(blkir, out, indent + 1, null);
+                }
+                try out.print("{}}}\n", .{idnt});
+                if (write_to) |wt| try out.print("{}var _{}_ = _{}_;\n", .{ idnt, wt, blk.blockid });
+            },
+            .vardecl => |vd| {
+                const initialout = getNewID();
+                try print(vd.initial.*, out, indent, initialout);
+                try out.print("{}var {} = _{}_;\n", .{ idnt, vd.jsname, initialout });
+                if (write_to) |wt| try out.print("{}var _{}_ = undefined;\n", .{ idnt, wt });
+            },
+            .vardecl_w => |vd| {
+                const initialout = getNewID();
+                try print(vd.initial.*, out, indent, initialout);
+                try out.print("{}var {} = ō.watchable(_{}_);\n", .{ idnt, vd.jsname, initialout });
+                if (write_to) |wt| try out.print("{}var _{}_ = undefined;\n", .{ idnt, wt });
+            },
+            .number => |num| {
+                if (write_to) |wt| try out.print("{}var _{}_ = {};\n", .{ idnt, wt, num });
+            },
+            .func => |func| {
+                if (write_to == null) {
+                    // func has no side effects and so it can be safely discarded.
+                    try out.print("{}// a function was unused here\n", .{idnt});
+                    return;
+                }
+                try out.print("{}var _{}_ = () => {{\n", .{
+                    idnt,
+                    write_to.?,
+                });
+                const bodyresid = getNewID();
+                try out.print("{}    var _{}_ = undefined;\n", .{ idnt, bodyresid });
+                try print(func.body.*, out, indent + 1, bodyresid);
+                try out.print("{}    return _{}_;\n", .{ idnt, bodyresid });
+                try out.print("{}}};\n", .{idnt});
+            },
+            else => {
+                try out.print("{}", .{idnt});
+                if (write_to) |wt| try out.print("var _{}_ = ", .{wt});
+                try out.print("ō.TODO(\"{}\");\n", .{@tagName(ir)});
+            },
         }
     }
 };
+const IndentWriter = struct {
+    count: usize,
+    pub fn format(idw: IndentWriter, comptime fmt: []const u8, options: std.fmt.FormatOptions, out: anytype) !void {
+        for (range(idw.count)) |_| {
+            try out.writeAll("    ");
+        }
+    }
+};
+fn range(max: usize) []const void {
+    return @as([]const void, &[_]void{}).ptr[0..max];
+}
 // we don't have to go too far at first, just do the simplest thing
 // don't overdo it or this will never be completed
 
@@ -523,7 +593,7 @@ const IR = union(enum) {
 // like it's not too bad but it is
 
 // const counter = widget() {
-// 	state counted: i54 = 0;
+// 	state counted: i53 = 0;
 // 	return .div(
 // 		:class="counter",
 // 		.button("++", :onclick = fn() counted += 1),
@@ -575,5 +645,5 @@ pub fn main() !void {
     defer renv.deinit();
 
     var resv = try evaluateExprs(&renv, parsed, .function);
-    try resv.ir.print(out, 0);
+    try resv.ir.print(out, 0, null);
 }
