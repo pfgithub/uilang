@@ -629,13 +629,19 @@ const IR = union(enum) {
             //     try out.writeAll(";");
             // },
             .block => |blk| {
-                try out.print("{}var _{}_ = undefined;\n", .{ idnt, blk.blockid });
-                try out.print("{}_{}_blk_: {{\n", .{ idnt, blk.blockid });
-                for (blk.body) |blkir| {
-                    _ = try print(blkir, out, indent + 1, null);
+                if (blk.blockid) |blkid| {
+                    try out.print("{}var _{}_ = undefined;\n", .{ idnt, blkid });
+                    try out.print("{}_{}_blk_: {{\n", .{ idnt, blkid });
                 }
-                try out.print("{}}}\n", .{idnt});
-                if (write_to) |wt| try out.print("{}var _{}_ = _{}_;\n", .{ idnt, wt, blk.blockid });
+                const nidnt = if (blk.blockid) |_| indent + 1 else indent;
+                for (blk.body) |blkir| {
+                    _ = try print(blkir, out, nidnt, null);
+                }
+                if (blk.blockid) |_| try out.print("{}}}\n", .{idnt});
+                if (write_to) |wt| {
+                    if (blk.blockid) |blkid| try out.print("{}var _{}_ = _{}_;\n", .{ idnt, wt, blkid }) // zig fmt
+                    else try out.print("{}var _{}_ = undefined;\n", .{ idnt, wt });
+                }
             },
             .vardecl => |vd| {
                 const initialout = getNewID();
