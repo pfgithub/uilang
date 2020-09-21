@@ -395,16 +395,6 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
 
             try decl_info.decl_type.initialize();
 
-            if (decl_info.decl_type.initialized.t_type.mode == .watchable) {
-                const baseir = try allocDupe(env.alloc, IR{ .varget_w = decl_info.jsname });
-                const dependencArr = try env.alloc.alloc(IR, 1);
-                dependencArr[0] = IR{ .varget_w = decl_info.jsname };
-                // (watchable [dependency list] [expression])
-                return EvalExprResult{
-                    .t_type = decl_info.decl_type.initialized.t_type,
-                    .ir = IR{ .watchable = .{ .dependencies = dependencArr, .value = baseir } },
-                };
-            }
             return EvalExprResult{
                 .t_type = decl_info.decl_type.initialized.t_type,
                 .ir = IR{ .varget = decl_info.jsname },
@@ -679,7 +669,6 @@ const IR = union(enum) {
                     write_to.?,
                 });
                 const bodyresid = getNewID();
-                try out.print("{}    var _{}_ = undefined;\n", .{ idnt, bodyresid });
                 try print(func.body.*, out, indent + 1, bodyresid);
                 try out.print("{}    return _{}_;\n", .{ idnt, bodyresid });
                 try out.print("{}}};\n", .{idnt});
