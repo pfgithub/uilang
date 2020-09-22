@@ -513,6 +513,12 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                 .widget => return reportError("cannot assignop in widget context"),
                 .function => {},
             }
+
+            const lhs = try evaluateExpr(env, opitms[0]._, mode);
+            if (!lhs.assignable) return reportError("lhs is not assignable");
+
+            // maybe there can be (set_variable_value) and (set_property) or something idk
+
             switch (opitms[1].op) {
                 .pleq => {
                     // IR: (assign :left (plus :left :right))
@@ -527,8 +533,6 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
 
                     // since assignop is only in normal contexts, there is no issue with this and the value just has to be unwatched if watchable
                     // ok do assignop first
-                    const lhs = try evaluateExpr(env, opitms[0]._, mode);
-                    if (!lhs.assignable) return reportError("lhs is not assignable");
                     const rhs = try unwatch(try evaluateExpr(env, opitms[2]._, mode));
 
                     // hopefully it is okay to evaluate lhs twice I hope
