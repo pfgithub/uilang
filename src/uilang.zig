@@ -191,8 +191,8 @@ fn reportError(msg: []const u8) ReportedError {
 }
 
 const Type = struct {
-    // should these be a property of the type? they are a property of the variable
-    mode: enum { variable, constant, watchable },
+    /// if this value is watchable
+    watchable: bool,
     tkind: union(enum) {
         empty, // there is no value. like `never` in typescript.
         unit, // there is one value.
@@ -210,6 +210,8 @@ const Type = struct {
 const EvalExprResult = struct {
     t_type: Type,
     ir: IR,
+    /// if this value can be assigned to
+    assignable: bool,
 };
 
 const EvalExprError = ReportedError || error{OutOfMemory};
@@ -255,7 +257,9 @@ fn evaluateExprs(env: *Environment, decls: []ast.Expression, mode: ExecutionMode
     // if any of those decls return, the info will be written to env
     // this can be used to determine the return type
     return EvalExprResult{
-        .t_type = .{ .tkind = .unit, .mode = .constant },
+        .assignable = false, // the result of a block cannot be assigned to
+        // TODO: determine the return type based on what value(s) are returned
+        .t_type = .{ .tkind = .unit, .watchable = false },
         .ir = IR{ .block = .{ .blockid = if (env.env_cfg.catches) |catches| catches.blkid else null, .body = resIR.toOwnedSlice() } },
     };
 }
@@ -265,6 +269,7 @@ fn storeTypeIntoType(value: IR, from_type: Type, to_type: Type) EvalExprError!Ev
     if (from_type.tkind == .ct_number) {
         if (to_type.tkind == .int) {
             return EvalExprResult{
+                .assignable = false, // @as(i64, somevar) = 25; is not ok.
                 .t_type = to_type,
                 .ir = value,
             };
@@ -272,6 +277,8 @@ fn storeTypeIntoType(value: IR, from_type: Type, to_type: Type) EvalExprError!Ev
     }
     if (!std.meta.eql(from_type, to_type)) return reportError("Type {} does not fit into type {}");
     return EvalExprResult{
+        // @as(i64, (var that is i64)) = 25; // is that ok? probably not
+        .assignable = false,
         .t_type = to_type,
         .ir = value,
     };
@@ -318,7 +325,8 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             }
 
             return EvalExprResult{
-                .t_type = .{ .tkind = .unit, .mode = .constant },
+                .assignable = false, // (var a = 5) = 2 // yeah no
+                .t_type = .{ .tkind = .unit, .watchable = false },
                 .ir = switch (vd.vartype) {
                     .let => @panic("TODO let"),
                     .const_ => IR{ .vardecl = .{ .jsname = decl_info.jsname, .reassign = false, .initial = rir } },
@@ -351,7 +359,8 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             // bodyv.t_type is the fn return type. ensure that matches the expected provided return type.
 
             return EvalExprResult{
-                .t_type = .{ .tkind = .func, .mode = .constant },
+                .assignable = false, // (fn() 2) = 5; // nope
+                .t_type = .{ .tkind = .func, .watchable = false },
                 .ir = IR{
                     .func = .{
                         .body = try allocDupe(env.alloc, bodyv.ir),
@@ -382,27 +391,50 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             // that should somevalue.value + 1 because it's in a normal fn now, not a widget anymore
             if (std.mem.eql(u8, varbl.name.*, "i53")) {
                 return EvalExprResult{
-                    .t_type = .{ .tkind = .t_type, .mode = .constant },
+                    .assignable = false, // i53 = i25 // no
+                    .t_type = .{ .tkind = .t_type, .watchable = false },
                     .ir = IR{
-                        .t_type = .{ .mode = .constant, .tkind = .{ .int = 54 } },
+                        .t_type = .{ .watchable = false, .tkind = .{ .int = 54 } },
                     },
                 };
                 // TODO not this. maybe put types in a part of the stdlib you can
                 // usingnamespace or something. whatever it is, not this.
             }
 
-            const decl_info = env.get(varbl.name.*) orelse return reportError("Variable not defined");
+            const decl_info: *DeclInfo = env.get(varbl.name.*) orelse return reportError("Variable not defined");
 
             try decl_info.decl_type.initialize();
 
+            switch (decl_info.kind) {
+                // lets/constants are not watchable. if a constant is set to a watchable value, it should be
+                // .value'd
+                // watch a = 25;
+                // fn() const b = a;
+                // => () => {const b = a.value;}
+                // if you want to keep the watchable, use `bind`
+                // watch a = 25;
+                // bind b = a;
+                .let, .const_ => if (decl_info.decl_type.initialized.t_type.watchable) unreachable, // type is watchable, see above
+                // state/trigger should make the type watchable
+                // watch a: i54 = 25;
+                // that should make the type watchable<i54>
+                .state, .trigger => if (decl_info.decl_type.initialized.t_type.watchable) unreachable, // type is not watchable, see above
+            }
+
             return EvalExprResult{
+                .assignable = switch (decl_info.kind) {
+                    .const_ => false,
+                    .let => true,
+                    .state, .trigger => true,
+                },
                 .t_type = decl_info.decl_type.initialized.t_type,
                 .ir = IR{ .varget = decl_info.jsname },
             };
         },
         .number => |numv| {
             return EvalExprResult{
-                .t_type = .{ .tkind = .ct_number, .mode = .constant },
+                .assignable = false, // 25 = 54; // no
+                .t_type = .{ .tkind = .ct_number, .watchable = false },
                 .ir = IR{ .number = numv.* },
             };
         },
@@ -414,9 +446,9 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             // or if a type is already written, confirm that this matches that.
             // TODO
 
-            // find where to return by searching up
             return EvalExprResult{
-                .t_type = .{ .tkind = .empty, .mode = .constant },
+                .assignable = false, // (return 5) = 2; // no
+                .t_type = .{ .tkind = .empty, .watchable = false },
                 .ir = IR{ .breakv = .{ .value = try allocDupe(env.alloc, resultir.ir), .blkid = topenv.blkid } },
             };
         },
@@ -431,7 +463,8 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                 try argsAL.append(argv.ir);
             }
             return EvalExprResult{
-                .t_type = .{ .tkind = .html, .mode = .constant },
+                .assignable = false, // .div() = .h1(); // no
+                .t_type = .{ .tkind = .html, .watchable = false },
                 .ir = IR{ .html = .{ .tag = he.tag.*, .args = argsAL.toOwnedSlice() } },
             };
         },
@@ -445,7 +478,8 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                 else => return reportError("Unsupported type here {}"),
             }
             return EvalExprResult{
-                .t_type = .{ .tkind = .attr, .mode = .constant },
+                .assignable = false, // :class="hi" = 2; // no
+                .t_type = .{ .tkind = .attr, .watchable = false },
                 .ir = IR{ .attr = .{ .name = ha.identifier.*, .value = try allocDupe(env.alloc, val.ir) } },
             };
         },
@@ -456,15 +490,40 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                 .escape => unreachable, // TODO string escapes
             };
             return EvalExprResult{
-                .t_type = .{ .tkind = .string, .mode = .constant },
+                .assignable = false,
+                .t_type = .{ .tkind = .string, .watchable = false },
                 .ir = IR{ .string = resTxt.toOwnedSlice() },
             };
         },
-        .operator => |opitms| {
+        .plusminusop => |opitms| {
+            for (opitms) |opitm| {
+                std.debug.warn("opitm: {}\n", .{opitm});
+            }
+            std.debug.panic("plusminusop produced even though {} len", .{opitms.len});
+        },
+        .assignop => |opitms| {
             // huh operators don't have a type yet
             // operators will need to be rethought in resyn
             // I want that thing to get the remainder of union items idk
-            std.debug.panic("TODO .{}", .{@tagName(decl)});
+            if (opitms.len != 3) return reportError("Cannot repeat assignop");
+            if (mode == .widget) return reportError("Cannot assignop in widget context");
+            switch (opitms[1].op) {
+                .pleq => {
+                    // IR: (assign :left (plus :left :right))
+                    // return IR.parse("(assign :left (plus :left :right))", .{.left = opitms[0]._, .right = opitms[2]._});
+                    // left has to be a value that can be assigned to, eg a watchable or a var or something
+                    // invalid:
+                    //     (blk: {break :blk watchable}) = 2;
+                    //     // blk will turn the value into .constant
+                    // valid:
+                    //     watchable = 2;
+                    //     // the variable is .watchable
+                    // uh oh, what if the .watchable is constant
+                    // idk this is weird and not structured right
+                    @panic("TODO +=");
+                },
+                else => std.debug.panic("TODO {} operator", .{@tagName(opitms[1].op)}),
+            }
         },
         else => std.debug.panic("TODO .{}", .{@tagName(decl)}),
     }

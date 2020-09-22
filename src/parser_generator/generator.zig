@@ -414,9 +414,11 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                             \\    // optional first joiner is not allowed with a named arg. that's a dumb special case but whatever
                             \\    while (true) {{
                             \\        const slot = try resAL.addOne();
-                            \\        slot.* = {6}(_{2}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => {5}}}) {7};
+                            \\        {{errdefer _ = resAL.pop(); slot.* = {6}(_{2}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => {5}}}) {7};}}
                             \\        {8}const opslot = try resAL.addOne();
-                            \\        {4}{12} = {11}{{ .{10} = _{1}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => break}} }};
+                            \\        {{errdefer _ = resAL.pop(); {4}{12} = {11}{{ .{10} = _{1}(parser) catch |e| switch(e) {{
+                            \\            else => return e, error.Recoverable => {{_ = resAL.pop(); break;}}
+                            \\        }} }};}}
                             \\    }}
                             \\    if (resAL.items.len == 0) return parser.err("no items");
                             \\    if (resAL.items.len == 1) return resAL.items[0]{13};
