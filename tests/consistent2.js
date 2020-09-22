@@ -7,27 +7,11 @@ const counter_0 = () => {
 	]);
 }
 
-// so this isn't quite right yet because::
-// $counted_2's type is not watchable
-// it should be ō.watch(v => v, [$counted_2])
-// but it's not
-// actually false it shouldn't be that uuh
-// it should only be that if $counted_2 + 1
-// eg `ō.watch(v => v + 1, [$counted_2])`
-// but there's no reason to make a watchable out of a watchable variable so uuh
-var _3_ = () => {
-    var _4_ = 0;
-    var $counted_2 = ō.watchable(_4_);
-    var _8_ = "counter";
-    var _8_ = ō.attr("class", _8);
-    var _9_ = " ";
-    var _10_ = $counted_2;
-    var _11_ = " ";
-    var _7_ = ō.html("span", _9_, _10_, _11_);
-    var _5_ = ō.html("div", _6_, _7_);
-    return _5_;
+var counter_0 = () => {
+    var $counted_2 = ō.watchable(0);
+    var _3_ = ō.html("div", ō.attr("class", "counter"), ō.html("span", " ", $counted_2, " "));
+    return _3_;
 };
-var counter_0 = _3_;
 
 class counter_0 {
 	constructor() {

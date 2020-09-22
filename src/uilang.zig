@@ -533,7 +533,7 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
 
                     // since assignop is only in normal contexts, there is no issue with this and the value just has to be unwatched if watchable
                     // ok do assignop first
-                    const rhs = try unwatch(try evaluateExpr(env, opitms[2]._, mode));
+                    const rhs = try unwatch(env, try evaluateExpr(env, opitms[2]._, mode));
 
                     // hopefully it is okay to evaluate lhs twice I hope
                     // no it isn't.
@@ -719,8 +719,115 @@ const IR = union(enum) {
     // there should be a version of this for expressions because not everything needs to be like this
     // if the thing can be printed as an expression, print it as one
     // that is actually hard to find out though. return .div(blk: {break :blk 2}); eg
+    // sometimes it should be possible to use parenthesis instead of blocks. eg if every item inside does not require a block to print
+    fn requiresBlock(ir: IR) bool {
+        switch (ir) {
+            .block => |blk| {
+                // TODO: loop over each item
+                // if any of the items require a block, return true
+                // excl the last item if it is a break from this block
+                return true;
+            },
+            .vardecl => return true,
+            .vardecl_w => return true,
+            .number => return false,
+            .string => return false,
+            .varget => return false,
+            .func => return false,
+            .breakv => return true, // excl specific situations in blocks
+            .html => |hv| {
+                for (hv.args) |arg| if (requiresBlock(arg)) return true;
+                return false;
+            },
+            .attr => |ar| {
+                if (requiresBlock(ar.value.*)) return true;
+                return false;
+            },
+            else => std.debug.panic("unsupported {}", .{@tagName(ir)}),
+        }
+    }
+    fn printValue(ir: IR, out: anytype, indent: usize) @TypeOf(out).Error!void {
+        const idnt = IndentWriter{ .count = indent };
+
+        switch (ir) {
+            .block => |blk| {
+                // TODO: support parenthesis in specific situations
+                unreachable; // requiresBlock returns false in this situation
+            },
+            .vardecl, .vardecl_w, .breakv => unreachable, // requiresBlock returns false in this situation
+            .number => |num| try out.print("{}", .{num}),
+            .string => |str| try printJSString(str, out),
+            .varget => |vnm| try out.writeAll(vnm),
+            .func => |func| {
+                try out.writeAll("() => ");
+                if (requiresBlock(func.body.*)) {
+                    try out.writeAll("{\n");
+                    switch (func.body.*) {
+                        .block => |blk| for (blk.body) |blkir| {
+                            _ = try print(blkir, out, indent + 1, null, blk.blockid orelse std.math.maxInt(usize));
+                        },
+                        else => {
+                            const bodyresid = getNewID();
+                            try print(func.body.*, out, indent + 1, bodyresid, std.math.maxInt(usize));
+                            try out.print("{}    return _{}_;\n", .{ idnt, bodyresid });
+                        },
+                    }
+                    try out.writeAll("}");
+                } else {
+                    try printValue(func.body.*, out, indent);
+                }
+            },
+            .html => |hl| {
+                try out.writeAll("ō.html(");
+                try printJSString(hl.tag, out);
+                for (hl.args) |arg| {
+                    try out.writeAll(", ");
+                    try printValue(arg, out, indent);
+                }
+                try out.writeAll(")");
+            },
+            .attr => |ar| {
+                try out.writeAll("ō.attr(");
+                try printJSString(ar.name, out);
+                try out.writeAll(", ");
+                try printValue(ar.value.*, out, indent);
+                try out.writeAll(")");
+            },
+            else => std.debug.panic("unsupported {}", .{@tagName(ir)}),
+        }
+    }
+    const AutoPrintResult = union(enum) {
+        variable: usize,
+        inlined: struct {
+            ir: *const IR,
+            indent: usize,
+        },
+        pub fn format(apr: AutoPrintResult, comptime fmt: []const u8, options: std.fmt.FormatOptions, out: anytype) !void {
+            switch (apr) {
+                .variable => |vnum| try out.print("_{}_", .{vnum}),
+                .inlined => |ild| try printValue(ild.ir.*, out, ild.indent),
+            }
+        }
+    };
+    fn printAuto(ir: *const IR, out: anytype, indent: usize, return_blkid: usize) @TypeOf(out).Error!AutoPrintResult {
+        if (requiresBlock(ir.*)) {
+            const write_to = getNewID();
+            try print(ir.*, out, indent, write_to, return_blkid);
+            return AutoPrintResult{ .variable = write_to };
+        }
+        return AutoPrintResult{ .inlined = .{ .ir = ir, .indent = indent } };
+    }
     fn print(ir: IR, out: anytype, indent: usize, write_to: ?usize, return_blkid: usize) @TypeOf(out).Error!void {
         const idnt = IndentWriter{ .count = indent };
+
+        if (!requiresBlock(ir)) {
+            if (write_to) |wtid| try out.print("{}var _{}_ = ", .{ idnt, wtid }) //
+            else try out.print("{}", .{idnt});
+            try printValue(ir, out, indent);
+            try out.writeAll(";\n");
+            return;
+        }
+
         switch (ir) {
             // .vardecl => |vd| {
             //     // TODO change this to only work inside blocks
@@ -745,52 +852,16 @@ const IR = union(enum) {
                 }
             },
             .vardecl => |vd| {
-                const initialout = getNewID();
-                try print(vd.initial.*, out, indent, initialout, return_blkid);
-                try out.print("{}var {} = _{}_;\n", .{ idnt, vd.jsname, initialout });
+                const printed = try printAuto(vd.initial, out, indent, return_blkid);
+                try out.print("{}var {} = {};\n", .{ idnt, vd.jsname, printed });
                 if (write_to) |wt| try out.print("{}var _{}_ = undefined;\n", .{ idnt, wt });
             },
             .vardecl_w => |vd| {
-                const initialout = getNewID();
-                try print(vd.initial.*, out, indent, initialout, return_blkid);
-                try out.print("{}var {} = ō.watchable(_{}_);\n", .{ idnt, vd.jsname, initialout });
+                const printed = try printAuto(vd.initial, out, indent, return_blkid);
+                try out.print("{}var {} = ō.watchable({});\n", .{ idnt, vd.jsname, printed });
                 if (write_to) |wt| try out.print("{}var _{}_ = undefined;\n", .{ idnt, wt });
             },
-            .number => |num| {
-                if (write_to) |wt| try out.print("{}var _{}_ = {};\n", .{ idnt, wt, num });
-            },
-            .string => |str| {
-                if (write_to) |wt| {
-                    try out.print("{}var _{}_ = ", .{ idnt, wt });
-                    try printJSString(str, out);
-                    try out.writeAll(";\n");
-                }
-            },
-            .varget => |vg| {
-                if (write_to) |wt| try out.print("{}var _{}_ = {};\n", .{ idnt, wt, vg });
-            },
-            .func => |func| {
-                if (write_to == null) {
-                    // func has no side effects and so it can be safely discarded.
-                    try out.print("{}// a function was unused here\n", .{idnt});
-                    return;
-                }
-                try out.print("{}var _{}_ = () => {{\n", .{
-                    idnt,
-                    write_to.?,
-                });
-                switch (func.body.*) {
-                    .block => |blk| for (blk.body) |blkir| {
-                        _ = try print(blkir, out, indent + 1, null, blk.blockid orelse std.math.maxInt(usize));
-                    },
-                    else => {
-                        const bodyresid = getNewID();
-                        try print(func.body.*, out, indent + 1, bodyresid, std.math.maxInt(usize));
-                        try out.print("{}    return _{}_;\n", .{ idnt, bodyresid });
-                    },
-                }
-                try out.print("{}}};\n", .{idnt});
-            },
+            .number, .string, .varget, .func => unreachable, // caught in requiresBlock
             .breakv => |bv| {
                 var wtv = getNewID();
                 try print(bv.value.*, out, indent, wtv, return_blkid);
