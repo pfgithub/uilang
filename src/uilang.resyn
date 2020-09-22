@@ -1,7 +1,7 @@
 file = expression[';'];
 
 expression =
-	| #operator(('+' '=')<pleq> | ('-' '=')<meq>)<operator>
+	| #operator((('+' '=')<pleq> | ('-' '=')<meq>)<op>)<operator>
 	| #suffix(suffixop)<suffixop>
 	| vardecl
 	| function

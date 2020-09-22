@@ -460,6 +460,12 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                 .ir = IR{ .string = resTxt.toOwnedSlice() },
             };
         },
+        .operator => |opitms| {
+            // huh operators don't have a type yet
+            // operators will need to be rethought in resyn
+            // I want that thing to get the remainder of union items idk
+            std.debug.panic("TODO .{}", .{@tagName(decl)});
+        },
         else => std.debug.panic("TODO .{}", .{@tagName(decl)}),
     }
 }

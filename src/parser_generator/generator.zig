@@ -61,6 +61,7 @@ const StructureKind = union(enum) {
     },
 };
 const PrintMode = enum { required, userdisplay, zigonly };
+// zig fmt: off
 const Structure = struct {
     name: ?[]const u8, // the name if it has one
     kind: StructureKind,
@@ -115,7 +116,21 @@ const Structure = struct {
                     try out.writeAll(": ");
                     switch (val.magic) {
                         .none => |base| try base.print(out, mode),
-                        .operator => try out.print("[]_{}", .{structure.typeNameID}),
+                        .operator => |op| {
+                            try out.writeAll("[]");
+                            if (op) |opv| if (opv.name) |opname| {
+                                try out.writeAll("union(enum) {");
+                                try out.writeAll(opname);
+                                try out.writeAll(": ");
+                                try opv.print(out, mode);
+                                try out.writeAll(", _: ");
+                            };
+                            try out.print("_{}", .{structure.typeNameID});
+                            if (op) |opv|
+                                if (opv.name) |opname| {
+                                    try out.writeAll("}");
+                                };
+                        },
                         .suffix => |cse| {
                             try out.print(
                                 "struct {{ _: *_{}, {}: ",
@@ -308,6 +323,7 @@ const Structure = struct {
         }
     }
 };
+// zig fmt: on
 
 fn allocDupe(alloc: *Alloc, a: anytype) !*@TypeOf(a) {
     const c = try alloc.create(@TypeOf(a));
@@ -385,15 +401,25 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                         // but with how this is currently programmed, that would be a mess
 
                         // oh my. is there a way to have named fields?
+
+                        if (nost.*) |nst| {
+                            if (nst.name) |_| {}
+                        }
+                        const named: ?[]const u8 = if (nost.*) |nst| if (nst.name) |nme| nme else null else null;
+
                         try out.print(
-                            \\    var resAL = std.ArrayList(_{0}).init(parser.alloc);
-                            \\    {4}_ = _{1}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => {{}}}}; // optional first joiner
+                            \\    const FieldType = std.meta.Child(std.meta.fieldInfo(_{0}, "{3}").field_type);
+                            \\    var resAL = std.ArrayList(FieldType).init(parser.alloc);
+                            \\    {9}{4}_ = _{1}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => {{}}}}; // optional first joiner
+                            \\    // optional first joiner is not allowed with a named arg. that's a dumb special case but whatever
                             \\    while (true) {{
-                            \\        try resAL.append(_{2}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => {5}}});
-                            \\        {4}_ = _{1}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => break}};
+                            \\        const slot = try resAL.addOne();
+                            \\        slot.* = {6}(_{2}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => {5}}}) {7};
+                            \\        {8}const opslot = try resAL.addOne();
+                            \\        {4}{12} = {11}{{ .{10} = _{1}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => break}} }};
                             \\    }}
                             \\    if (resAL.items.len == 0) return parser.err("no items");
-                            \\    if (resAL.items.len == 1) return resAL.items[0];
+                            \\    if (resAL.items.len == 1) return resAL.items[0]{13};
                             \\
                             \\    return _{0}{{ .{3} = resAL.toOwnedSlice() }};
                             \\}}
@@ -408,6 +434,14 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                             value.field,
                             stringIf(nost.* == null, "//", ""),
                             stringIf(nost.* == null, "break", "return parser.err(\"last or disallowed\")"),
+                            stringIf(named != null, ".{._ = ", ""),
+                            stringIf(named != null, "}", ""),
+                            stringIf(named == null, "//", ""),
+                            stringIf(named == null, "", "//"),
+                            stringIf(named == null, "_", named.?),
+                            stringIf(named == null, "struct{_: FieldType}", "."),
+                            stringIf(named == null, "_", "opslot.*"),
+                            stringIf(named == null, "", "._"),
                         });
                     },
                     .suffix => |*nost| {
