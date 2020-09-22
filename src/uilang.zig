@@ -509,27 +509,66 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             // operators will need to be rethought in resyn
             // I want that thing to get the remainder of union items idk
             if (opitms.len != 3) return reportError("Cannot repeat assignop");
-            if (mode == .widget) return reportError("Cannot assignop in widget context");
+            switch (mode) {
+                .widget => return reportError("cannot assignop in widget context"),
+                .function => {},
+            }
             switch (opitms[1].op) {
                 .pleq => {
                     // IR: (assign :left (plus :left :right))
                     // return IR.parse("(assign :left (plus :left :right))", .{.left = opitms[0]._, .right = opitms[2]._});
-                    // left has to be a value that can be assigned to, eg a watchable or a var or something
-                    // invalid:
-                    //     (blk: {break :blk watchable}) = 2;
-                    //     // blk will turn the value into .constant
-                    // valid:
-                    //     watchable = 2;
-                    //     // the variable is .watchable
-                    // uh oh, what if the .watchable is constant
-                    // idk this is weird and not structured right
-                    @panic("TODO +=");
+                    // left has to be assignable
+                    // if right is watchable, it must be unwatched (.value)
+
+                    // how about doing plusop and eqop seperately first
+                    // plusop needs to unwatch lhs and rhs only if the mode is normal
+                    // if the mode is watchable, plusop needs to watch the needed things in lhs/rhs and
+                    // make a (watch (fn a + b) [$a, $b])
+
+                    // since assignop is only in normal contexts, there is no issue with this and the value just has to be unwatched if watchable
+                    // ok do assignop first
+                    const lhs = try evaluateExpr(env, opitms[0]._, mode);
+                    if (!lhs.assignable) return reportError("lhs is not assignable");
+                    const rhs = try unwatch(try evaluateExpr(env, opitms[2]._, mode));
+
+                    // hopefully it is okay to evaluate lhs twice I hope
+                    // no it isn't.
+                    //     array[(a++, a)] += 3;
+                    // you can't duplicate that
+                    //     const lhs_unwatched = try unwatch(lhs);
+                    // not ok
+                    // uuh how to generate code for this
+                    //     array[(a++, a)] += 3
+                    //    _1 = (a++, a)
+                    //    _2 = array
+                    //    _2[_1] = _1 + _3
+                    // we have to generate that
+                    // ? how though
+
+                    // (assign lhs.ir (plus (unwatch lhs.ir) rhs.ir))
+                    // how to not duplicate lhs? hopefully assignable lhs s will be allowed to be duplicated
+
+                    @panic("TODO figure out how to not duplicate lhs. maybe do = first I guess idk");
                 },
                 else => std.debug.panic("TODO {} operator", .{@tagName(opitms[1].op)}),
             }
         },
         else => std.debug.panic("TODO .{}", .{@tagName(decl)}),
     }
+}
+
+// wrap an evalexprresult in an unwatch if needed
+fn unwatch(env: *Environment, eer: EvalExprResult) EvalExprError!EvalExprResult {
+    if (!eer.t_type.watchable) return eer;
+
+    var ttcopy = eer.t_type;
+    ttcopy.watchable = false;
+
+    return EvalExprResult{
+        .assignable = false,
+        .t_type = ttcopy,
+        .ir = IR{ .unwatch = try allocDupe(env.alloc, eer.ir) },
+    };
 }
 
 // eg blk: (expr) will run this with .{.blk_name = "blk"} eg
@@ -639,7 +678,7 @@ const IR = union(enum) {
         jsname: []const u8,
         newval: *IR,
     },
-    varget_w: []const u8,
+    unwatch: *IR, // $watchable.value
     varset_w: struct {
         jsname: []const u8,
         newval: *IR,
