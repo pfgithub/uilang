@@ -355,7 +355,10 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             const bodyv = try evaluateExprInNewEnv(env, func.expression.*, .{
                 .catches = ccfg,
                 .allow_cf_passthrough = false,
-            }, .widget);
+            }, switch (fn_kind) {
+                .function => .function,
+                .widget => .widget,
+            });
             // bodyv.t_type is the fn return type. ensure that matches the expected provided return type.
 
             return EvalExprResult{
