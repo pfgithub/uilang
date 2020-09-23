@@ -781,10 +781,10 @@ const IR = union(enum) {
                 try out.writeAll("ō.html(");
                 try printJSString(hl.tag, out);
                 for (hl.args) |arg| {
-                    try out.writeAll(", ");
-                    try printValue(arg, out, indent);
+                    try out.print(",\n{}    ", .{idnt});
+                    try printValue(arg, out, indent + 1);
                 }
-                try out.writeAll(")");
+                try out.print("\n{})", .{idnt});
             },
             .attr => |ar| {
                 try out.writeAll("ō.attr(");
@@ -863,12 +863,11 @@ const IR = union(enum) {
             },
             .number, .string, .varget, .func => unreachable, // caught in requiresBlock
             .breakv => |bv| {
-                var wtv = getNewID();
-                try print(bv.value.*, out, indent, wtv, return_blkid);
+                const wtv = try printAuto(bv.value, out, indent, return_blkid);
                 if (bv.blkid == return_blkid) {
-                    try out.print("{}return _{}_;\n", .{ idnt, wtv });
+                    try out.print("{}return {};\n", .{ idnt, wtv });
                 } else {
-                    try out.print("{}_{}_ = _{}_;\n", .{ idnt, bv.blkid, wtv });
+                    try out.print("{}_{}_ = {};\n", .{ idnt, bv.blkid, wtv });
                     try out.print("{}break _{}_blk;\n", .{ idnt, bv.blkid });
                 }
             },

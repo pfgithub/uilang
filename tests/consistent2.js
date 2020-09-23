@@ -9,8 +9,14 @@ const counter_0 = () => {
 
 var counter_0 = () => {
     var $counted_2 = ō.watchable(0);
-    var _3_ = ō.html("div", ō.attr("class", "counter"), ō.html("span", " ", $counted_2, " "));
-    return _3_;
+    return ō.html("div",
+        ō.attr("class", "counter"),
+        ō.html("span",
+            " ",
+            $counted_2,
+            " "
+        )
+    );
 };
 
 class counter_0 {
