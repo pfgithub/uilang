@@ -16,3 +16,16 @@ for the parser Generator
 - disallow spaces inside things. eg `a ['b']` should not be allowed. also to do this, spaces need to be read as a token and not skipped. either this or have an autoformatter, this is probably easier and better.
 - maybe rather than putting positions randomly where they fit, try wrapping all top level things with `struct {pos: (start, end), value: _12}` eg
 - instead of "demo types", how about a function `T(comptime a: type, comptime b: type) type {return b}` and then instead of a: _12 do a: T(struct {actual type}, _12)
+
+## goals
+
+- building consistent2.ul
+- writing/copying the js header stuff needed to make the output code useful (the code I have written already for a previous project does lists and html elements and fragments and watchables that update up I think and a bunch of stuff)
+- eg if you sort and filter an array, adding new items to the array should not require resorting and refiltering and then diffing but should instead flag the array itself to insert items sorted and filtered.
+- figure out what happens with recursive structures. figure out what happens with recursive watches (I think the answer here is that recursive watches don't exist because watch decls have their default value executed in fn context rather than module context)
+- zig stuff:
+	- async
+	- structs and stuff and optionals and errors and whatever. preferably backed by arrays rather than objects with named keys. or maybe there can be a build option to do named keys for easier debug, but arrays are preferred
+	- comptime
+- inferred unions. eg `union {a: i53, b: struct {}}` and then `@as(that union, 25)` should automatically do .a. but if there is a conflict and the item you are coercing to the union can be coerced to more than one of the possible values, error and make you manually specify. (btw unions are union(enum) by default and also accessing fields can return optionals because zig should do that but can't because of the difference between `union` and `union(enum)`)
+- idk other things make the language first
