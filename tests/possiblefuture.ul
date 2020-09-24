@@ -1,0 +1,17 @@
+// don't plan for this. make actual real code work before doing too conceptual stuff
+
+pub fn HTMLElement(tag: string, args: []Arg) {
+	return __js(
+		.inline,
+		"ō.watchable(" args.map(arg => __js(.from, arg)),
+	);
+}
+
+// that's a bad example
+
+pub inline fn operator+ (lhs: number, rhs: number) {
+	return js(.inline, "(", js(lhs), "+", js(rhs), ")");
+}
+
+// anyway stuff like that in the stdlib that you import instead of having everything defined in uilang itself.
+// far future possible plan though so don't think about this too much and instead focus on making a working language first.

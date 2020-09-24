@@ -518,6 +518,9 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
         },
         .plusminusop => |opitms| {
             if (opitms.len != 3) return reportError("TODO support operator chains");
+            // if either value is watchable,
+            // - if .widget => produce a watch expression. also unwrap sub-watch exprs if needed.
+            // - if .function => unwatch(lhs) unwatch(rhs)
             switch (opitms[1].op) {
                 .plus => {},
                 .minus => {},
@@ -525,7 +528,7 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             for (opitms) |opitm| {
                 std.debug.warn("opitm: {}\n", .{opitm});
             }
-            std.debug.panic("plusminusop produced even though {} len", .{opitms.len});
+            std.debug.panic("TODO plusminusop", .{});
         },
         .assignop => |opitms| {
             // huh operators don't have a type yet
@@ -690,6 +693,7 @@ fn evaluateExprInNewEnv(env: *Environment, decl: ast.Expression, block_opts: Env
 // idk what that is but it's like instead of a(b(c)) it's 1 = a; 2 = b(1); 3 = c(2);
 // that makes some codegen easier and some harder
 // eg blocks require setting a variable to return a value
+const MathOp = enum { add, sub, mul, div };
 const IR = union(enum) {
     vardecl: struct {
         reassign: bool,
@@ -710,6 +714,7 @@ const IR = union(enum) {
         jsname: []const u8,
         newval: *IR,
     },
+    math: struct { lhs: *IR, rhs: *IR, op: MathOp },
     html: struct { tag: []const u8, args: []IR },
     attr: struct { name: []const u8, value: *IR },
     breakv: struct { value: *IR, blkid: usize },
@@ -1010,4 +1015,8 @@ pub fn main() !void {
 
     var resv = try evaluateExprs(&renv, parsed, .function);
     try resv.ir.print(out, 0, null, std.math.maxInt(usize));
+}
+
+test "" {
+    std.meta.refAllDecls(@This());
 }

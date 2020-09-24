@@ -740,15 +740,16 @@ pub const Generator = struct {
             // try structure.print(out, .userdisplay);
             // try out.writeAll(";\n");
 
-            try out.writeAll("const _");
-            try writeTypeNameFor(out, decl.name);
-            try out.writeAll(" = ");
-            try structure.print(out, .userdisplay);
-            try out.writeAll(";\n");
             try out.writeAll("pub const ");
             try writeTypeNameFor(out, decl.name);
             try out.writeAll(" = ");
             try structure.print(out, .zigonly);
+            try out.writeAll(";\n");
+
+            try out.writeAll("const _");
+            try writeTypeNameFor(out, decl.name);
+            try out.writeAll(" = ");
+            try structure.print(out, .userdisplay);
             try out.writeAll(";\n\n");
         }
 

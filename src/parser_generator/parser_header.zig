@@ -323,3 +323,7 @@ fn _parseToken(parser: *Parser, tokenKind: Token.TokenType, expectedText: ?[]con
 
     return tok;
 }
+
+test "" {
+    std.meta.refAllDecls(@This());
+}
