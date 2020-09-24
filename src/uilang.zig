@@ -214,6 +214,21 @@ const EvalExprResult = struct {
     assignable: bool,
 };
 
+const VarDeclInfo = struct { typxpr: ?*ast.Expression, dvxpr: *ast.Expression };
+fn getVarDeclInfo(vd: ast.Vardecl) EvalExprError!VarDeclInfo {
+    return switch (vd.initmode) {
+        .ttype => |tt| switch (tt.texpr.*) {
+            .assignop => |aop| blk: {
+                if (aop.len != 3) return reportError("Too many equals signs. Expected var varname: type = value;");
+                if (aop[1].op != .eq) return reportError("Expected `=` in var varname: type = value, not {}");
+                break :blk .{ .typxpr = &aop[0]._, .dvxpr = &aop[2]._ };
+            },
+            else => return reportError("Missing `=` (Expected var varname: type = value)"),
+        },
+        .auto => |ao| .{ .typxpr = null, .dvxpr = ao.initv },
+    };
+}
+
 const EvalExprError = ReportedError || error{OutOfMemory};
 // if we do result location stuff, we can skip a bit
 // resultLocation: struct {result: Type, outname: []const u8}
@@ -229,7 +244,8 @@ fn evaluateExprs(env: *Environment, decls: []ast.Expression, mode: ExecutionMode
                 .state => .state,
                 .trigger => .trigger,
             };
-            try env.declare(vd.name.*, vt, if (vd.ttype) |tt| tt.expression else null, vd.expression);
+            const vs = try getVarDeclInfo(vd.*);
+            try env.declare(vd.name.*, vt, vs.typxpr, vs.dvxpr);
         },
         else => {}, // ok
     };
@@ -303,8 +319,10 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
 
             // check if the initializer ir has already been created (eg a variable with no type specified will do this)
             const rir = decl_info.decl_type.initialized.ir orelse blk: {
+                const vs = try getVarDeclInfo(vd.*);
+
                 // create the initial value
-                const initial_value = try evaluateExpr(env, vd.expression.*, .function);
+                const initial_value = try evaluateExpr(env, vs.dvxpr.*, .function);
 
                 // compare the expected type (from decl_info) with the actual type (from initial_value) and store it
                 const stored = try storeTypeIntoType(initial_value.ir, initial_value.t_type, decl_info.decl_type.initialized.t_type);
@@ -499,6 +517,11 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             };
         },
         .plusminusop => |opitms| {
+            if (opitms.len != 3) return reportError("TODO support operator chains");
+            switch (opitms[1].op) {
+                .plus => {},
+                .minus => {},
+            }
             for (opitms) |opitm| {
                 std.debug.warn("opitm: {}\n", .{opitm});
             }

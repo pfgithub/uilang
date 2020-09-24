@@ -2,7 +2,7 @@ file = expression[';'];
 
 expression =
 	| #operator(('+'<plus> | '-'<minus>)<op>)<plusminusop>
-	| #operator((('+' '=')<pleq> | ('-' '=')<meq>)<op>)<assignop>
+	| #operator((('+' '=')<pleq> | ('-' '=')<meq> | '='<eq>)<op>)<assignop>
 	| #suffix(suffixop)<suffixop>
 	| vardecl
 	| function
@@ -17,7 +17,11 @@ expression =
 ;
 
 // TODO (':' expression<*>)?<ttype>
-vardecl = ('let'<let> | 'const'<const_> | 'state'<state> | 'trigger'<trigger>)<vartype> #lockin() identifier<name> (':' expression)?<ttype> '=' expression;
+vardecl =
+	('let'<let> | 'const'<const_> | 'state'<state> | 'trigger'<trigger>)<vartype> #lockin()
+	identifier<name> ((':' expression<texpr>)<ttype> | ('=' expression<initv>)<auto>)<initmode>
+;
+
 // returns from a function, not a block or some parenthesis
 returnstatement = 'return' expression;
 htmlelement = '.' #lockin() identifier<tag> parens;

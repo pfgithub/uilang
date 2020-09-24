@@ -2,8 +2,8 @@ const counter = widget() {
 	state counted: i53 = 0;
 	return .div(
 		:class="counter",
-		//.button("++", :onclick = fn() counted += 1),
+		//.button("++", :onclick = fn() counted = counted + 1),
 		.span(" ", counted, " "),
-		//.button("--", :onclick = fn() counted -= 1),
+		//.button("--", :onclick = fn() counted = counted - 1),
 	);
 }
