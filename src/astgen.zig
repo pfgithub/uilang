@@ -262,28 +262,38 @@ fn evaluateExprs(env: *Environment, decls: []ast.Expression, mode: ExecutionMode
 }
 
 /// store ir value into to_type, coercing if needed.
-fn storeTypeIntoType(value: IR, from_type: Type, to_type: Type) EvalExprError!EvalExprResult {
+fn storeTypeIntoType(value: EvalExprResult, to_type: Type) EvalExprError!EvalExprResult {
+    const from_type = &value.t_type;
+
+    if (from_type.watchable and !to_type.watchable) return reportError("TODO unwatch if allowed here");
+    // if(to_type.watchable and !from_type.watchable) return reportError(""); // ok for now I guess idk
+
     if (from_type.tkind == .ct_number) {
         if (to_type.tkind == .int) {
             return EvalExprResult{
                 .assignable = false, // @as(i64, somevar) = 25; is not ok.
                 .t_type = to_type,
-                .ir = value,
+                .ir = value.ir,
             };
         }
     }
-    if (!std.meta.eql(from_type, to_type)) return reportError("Type {} does not fit into type {}");
+    if (!std.meta.eql(from_type.tkind, to_type.tkind)) {
+        std.debug.warn("storing {} into {}\n", .{ from_type.*, to_type });
+        return reportError("Type {} does not fit into type {}");
+    }
     return EvalExprResult{
         // @as(i64, (var that is i64)) = 25; // is that ok? probably not
         .assignable = false,
         .t_type = to_type,
-        .ir = value,
+        .ir = value.ir,
     };
 }
 
+// TODO rather than having a seperate explicit unwatch, make this a union(enum) and put it as a property in function
 const ExecutionMode = enum {
     function, // normal top to bottom run code
     widget, // weird watchable code
+    explicit_unwatch,
 };
 
 fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) EvalExprError!EvalExprResult {
@@ -303,16 +313,16 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                 const vs = try getVarDeclInfo(vd.*);
 
                 // create the initial value
-                const initial_value = try evaluateExpr(env, vs.dvxpr.*, .function);
+                const initial_value = try evaluateExpr(env, vs.dvxpr.*, .explicit_unwatch);
 
                 // compare the expected type (from decl_info) with the actual type (from initial_value) and store it
-                const stored = try storeTypeIntoType(initial_value.ir, initial_value.t_type, decl_info.decl_type.initialized.t_type);
+                const stored = try storeTypeIntoType(initial_value, decl_info.decl_type.initialized.t_type);
 
                 break :blk try allocDupe(env.alloc, stored.ir);
             };
 
             switch (mode) {
-                .function => switch (vd.vartype) {
+                .function, .explicit_unwatch => switch (vd.vartype) {
                     .state => return reportError("State is not allowed in a function context"),
                     .trigger => return reportError("Let is not allowed in a function context"),
                     else => {},
@@ -396,7 +406,7 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                     .assignable = false, // i53 = i25 // no
                     .t_type = .{ .tkind = .t_type, .watchable = false },
                     .ir = IR{
-                        .t_type = .{ .watchable = false, .tkind = .{ .int = 54 } },
+                        .t_type = .{ .watchable = false, .tkind = .{ .int = 53 } },
                     },
                 };
                 // TODO not this. maybe put types in a part of the stdlib you can
@@ -498,18 +508,55 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             };
         },
         .plusminusop => |opitms| {
-            if (opitms.len != 3) return reportError("TODO support operator chains");
+            if (opitms.len != 3) std.debug.panic("TODO support operator chains", .{});
             // if either value is watchable,
             // - if .widget => produce a watch expression. also unwrap sub-watch exprs if needed.
             // - if .function => unwatch(lhs) unwatch(rhs)
-            switch (opitms[1].op) {
-                .plus => {},
-                .minus => {},
+
+            var lhs = try evaluateExpr(env, opitms[0]._, mode);
+            var rhs = try evaluateExpr(env, opitms[2]._, mode);
+
+            switch (mode) {
+                .function => {
+                    // what happens if the result location is the same as the location of an argument?
+                    // does it have to make a copy or something? do things break if I set
+                    // things in @resultLocation() and then use the second argument? idk
+                    lhs = try unwatch(env, lhs);
+                    rhs = try unwatch(env, rhs);
+                },
+                .explicit_unwatch => if (lhs.t_type.watchable or rhs.t_type.watchable) {
+                    return reportError("Explicit unwatch statements are required here because this context" ++
+                        " looks like it is widget but is actually function.");
+                },
+                .widget => {
+                    if (lhs.t_type.watchable or rhs.t_type.watchable) {
+                        std.debug.panic("TODO support watchable lhs/rhs of add in functions", .{});
+                    }
+                },
             }
-            for (opitms) |opitm| {
-                std.debug.warn("opitm: {}\n", .{opitm});
-            }
-            std.debug.panic("TODO plusminusop", .{});
+
+            // TODO determine a common type based on the types of l and rhs
+            const commontype = Type{ .watchable = false, .tkind = .{ .int = 53 } };
+
+            lhs = try storeTypeIntoType(lhs, commontype);
+            rhs = try storeTypeIntoType(lhs, commontype);
+
+            return EvalExprResult{
+                .assignable = false,
+                .t_type = commontype,
+                .ir = IR{
+                    .math = .{
+                        .lhs = try allocDupe(env.alloc, lhs.ir),
+                        .rhs = try allocDupe(env.alloc, rhs.ir),
+                        .op = switch (opitms[1].op) {
+                            .plus => .add,
+                            .minus => .sub,
+                        },
+                    },
+                },
+            };
+            // ? debug safety check that the operation did not overflow
+            //   maybe
         },
         .assignop => |opitms| {
             // huh operators don't have a type yet
@@ -519,6 +566,7 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             switch (mode) {
                 .widget => return reportError("cannot assignop in widget context"),
                 .function => {},
+                .explicit_unwatch => {}, // probably a block, ok I think, maybe it was a mistake adding explicit_unwatch.
             }
 
             const lhs = try evaluateExpr(env, opitms[0]._, mode);
@@ -527,6 +575,24 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             // maybe there can be (set_variable_value) and (set_property) or something idk
 
             switch (opitms[1].op) {
+                .eq => {
+                    // maybe unwatch itself should error if this is a function context with explicit unwatch set
+                    // otherwise this isn't very useful
+                    // ok todo future that
+                    const rhs = try storeTypeIntoType(try unwatch(env, try evaluateExpr(env, opitms[2]._, mode)), lhs.t_type);
+
+                    return EvalExprResult{
+                        .assignable = false,
+                        .t_type = .{ .watchable = false, .tkind = .unit },
+                        .ir = .{
+                            .assign = .{
+                                .lval = try allocDupe(env.alloc, lhs.ir),
+                                .rhs = try allocDupe(env.alloc, rhs.ir),
+                                .watchable = lhs.t_type.watchable,
+                            },
+                        },
+                    };
+                },
                 .pleq => {
                     // IR: (assign :left (plus :left :right))
                     // return IR.parse("(assign :left (plus :left :right))", .{.left = opitms[0]._, .right = opitms[2]._});

@@ -16,16 +16,9 @@ pub const IR = union(enum) {
         jsname: []const u8,
     },
     varget: []const u8,
-    varset: struct {
-        jsname: []const u8,
-        newval: *IR,
-    },
     unwatch: *IR, // $watchable.value
-    varset_w: struct {
-        jsname: []const u8,
-        newval: *IR,
-    },
     math: struct { lhs: *IR, rhs: *IR, op: MathOp },
+    assign: struct { lval: *IR, rhs: *IR, watchable: bool },
     html: struct { tag: []const u8, args: []IR },
     attr: struct { name: []const u8, value: *IR },
     breakv: struct { value: *IR, blkid: usize },
