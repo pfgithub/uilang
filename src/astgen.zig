@@ -45,12 +45,14 @@ const LaterType = union(enum) {
     uninitialized_type: struct {
         env: *Environment,
         type_code: *ast.Expression,
+        should_be_watchable: bool,
     },
     // in this case, the expression needs to be evaluated and then latertype will actually
     // be storing the result ir to be inserted with the vardecl
     uninitialized_expression: struct {
         env: *Environment,
         expression_code: *ast.Expression,
+        should_be_watchable: bool,
     },
     in_progress: void,
     initialized: struct {
@@ -77,8 +79,11 @@ const LaterType = union(enum) {
                 if (exprval.ir != .t_type) {
                     @panic("TODO comptimeEval(exprval.ir)");
                 }
+                var tcopy = exprval.ir.t_type;
+                if (unin.should_be_watchable) tcopy.watchable = true //
+                else if (tcopy.watchable) unreachable; // watchable type used in nonwatchable variable
                 lt.* = .{
-                    .initialized = .{ .ir = null, .t_type = exprval.ir.t_type },
+                    .initialized = .{ .ir = null, .t_type = tcopy },
                 };
             },
             .uninitialized_expression => |uninexpr| {
@@ -86,8 +91,13 @@ const LaterType = union(enum) {
                 const exprcode = uninexpr.expression_code;
                 const exprval = try evaluateExpr(env, exprcode.*, .function);
                 const allocdir = try allocDupe(env.alloc, exprval.ir);
+
+                var tcopy = exprval.t_type;
+                if (uninexpr.should_be_watchable) tcopy.watchable = true //
+                else if (tcopy.watchable) unreachable; // watchable type used in nonwatchable variable
+
                 lt.* = .{
-                    .initialized = .{ .ir = allocdir, .t_type = exprval.t_type },
+                    .initialized = .{ .ir = allocdir, .t_type = tcopy },
                 };
             },
             .initialized => unreachable, // handled above
@@ -102,12 +112,24 @@ const DeclInfo = struct {
     decl_type: LaterType,
     jsname: []const u8,
     fn init(alloc: *Alloc, kind: DeclKind, name: []const u8, env: *Environment, typev: ?*ast.Expression, valuev: *ast.Expression) !DeclInfo {
+        const should_be_watchable = switch (kind) {
+            .const_ => false,
+            .let => false,
+            .state => true,
+            .trigger => true,
+        };
         return DeclInfo{
             .kind = kind,
             .decl_type = if (typev) |tv|
-                LaterType{ .uninitialized_type = .{ .env = env, .type_code = tv } }
+                LaterType{ .uninitialized_type = .{ .env = env, .type_code = tv, .should_be_watchable = should_be_watchable } }
             else
-                LaterType{ .uninitialized_expression = .{ .env = env, .expression_code = valuev } },
+                LaterType{
+                    .uninitialized_expression = .{
+                        .env = env,
+                        .expression_code = valuev,
+                        .should_be_watchable = should_be_watchable,
+                    },
+                },
             .jsname = try createJSSafeName(alloc, name, switch (kind) {
                 // TODO if this miscompiles, move it into a new function and have it return.
                 .state => "$",
@@ -177,6 +199,11 @@ const Environment = struct {
             return null;
         };
         return &entry.value;
+    }
+    // get the return type of this environment.
+    // set by catching control flow and informing that layer about the type you have returned.
+    fn returnType(env: Environment) Type {
+        return .{ .watchable = false, .tkind = .unit };
     }
 };
 
@@ -256,7 +283,7 @@ fn evaluateExprs(env: *Environment, decls: []ast.Expression, mode: ExecutionMode
     return EvalExprResult{
         .assignable = false, // the result of a block cannot be assigned to
         // TODO: determine the return type based on what value(s) are returned
-        .t_type = .{ .tkind = .unit, .watchable = false },
+        .t_type = env.returnType(),
         .ir = IR{ .block = .{ .blockid = if (env.env_cfg.catches) |catches| catches.blkid else null, .body = resIR.toOwnedSlice() } },
     };
 }
@@ -386,21 +413,6 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             return try evaluateExprs(&thisenv, block.decls, mode);
         },
         .variable => |varbl| {
-            // how to decide if the result of this expression should be watched or not?
-            //     a + 1
-            // in a fn, that should just do a.value + 1
-            // in a widget though, that should probably do a.watch(nv => nv + 1)
-            // ok
-            //     const somevalue = a + 1;
-            // that should uuh
-            // not be allowed?
-            // (in widget, idk about fn)
-            //     .div(somevalue + 1)
-            // that should somevalue.watch(nv => nv + 1)
-            //     somevalue += 1;
-            // in widget, that should not be allowed
-            //     fn() somevalue + 1
-            // that should somevalue.value + 1 because it's in a normal fn now, not a widget anymore
             if (std.mem.eql(u8, varbl.name.*, "i53")) {
                 return EvalExprResult{
                     .assignable = false, // i53 = i25 // no
@@ -430,7 +442,7 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                 // state/trigger should make the type watchable
                 // watch a: i54 = 25;
                 // that should make the type watchable<i54>
-                .state, .trigger => if (decl_info.decl_type.initialized.t_type.watchable) unreachable, // type is not watchable, see above
+                .state, .trigger => if (!decl_info.decl_type.initialized.t_type.watchable) unreachable, // type is not watchable, see above
             }
 
             return EvalExprResult{
@@ -539,7 +551,7 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             const commontype = Type{ .watchable = false, .tkind = .{ .int = 53 } };
 
             lhs = try storeTypeIntoType(lhs, commontype);
-            rhs = try storeTypeIntoType(lhs, commontype);
+            rhs = try storeTypeIntoType(rhs, commontype);
 
             return EvalExprResult{
                 .assignable = false,
@@ -651,21 +663,35 @@ fn unwatch(env: *Environment, eer: EvalExprResult) EvalExprError!EvalExprResult 
 // eg blk: (expr) will run this with .{.blk_name = "blk"} eg
 // so you know it catches `break :blk`
 fn evaluateExprInNewEnv(env: *Environment, decl: ast.Expression, block_opts: Environment.EnvironmentConfig, mode: ExecutionMode) EvalExprError!EvalExprResult {
+    var thisenv = Environment.init(env.alloc, env, block_opts);
     switch (decl) {
         .block => |bk| {
-            var thisenv = Environment.init(env.alloc, env, block_opts);
-
             return try evaluateExprs(&thisenv, bk.decls, mode);
         },
         else => {
-            var thisenv = Environment.init(env.alloc, env, block_opts);
-
             const rv = try evaluateExpr(&thisenv, decl, mode);
 
             if (block_opts.catches) |catches| {
                 // const resIR = IR{ .block = .{ .blkid = catches.blkid } };
                 // return rv;
-                return reportError("TODO support evaluateExprInNewEnv non-block with catches");
+                // uuh what?
+                // fn() return 5
+                // ok that's an example
+                // so uuh
+                // ??
+                // return 5 will be a noreturn
+                // but it will set the block's return value to i53
+                // so this has to make a block ok
+                // and then the printer can optimize the block away
+                const return_instr = IR{ .breakv = .{ .blkid = catches.blkid, .value = try allocDupe(env.alloc, rv.ir) } };
+
+                const res_body = try std.mem.dupe(env.alloc, IR, &[_]IR{return_instr});
+
+                const resIR = IR{ .block = .{ .blockid = catches.blkid, .body = res_body } };
+
+                // TODO tell env about rv's return value
+
+                return EvalExprResult{ .assignable = false, .t_type = thisenv.returnType(), .ir = resIR };
             } else {
                 return rv;
             }

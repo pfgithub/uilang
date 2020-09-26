@@ -5,6 +5,10 @@ usingnamespace @import("help.zig");
 
 //! ir → js
 
+// what if we just defined simple exprs as
+// pub const unwatch = "({lhs}).value";
+// that would be easier
+
 fn requiresBlock(ir: IR) bool {
     switch (ir) {
         .block => |blk| {
@@ -28,7 +32,11 @@ fn requiresBlock(ir: IR) bool {
             if (requiresBlock(ar.value.*)) return true;
             return false;
         },
-        else => std.debug.panic("unsupported {}", .{@tagName(ir)}),
+        // .assign => |an| return requiresBlock(an.lval.*) or requiresBlock(ar.rval.*),
+        .assign => return true, // make things easier for now.
+        .math => return true, // it needs to be easier to make these print things
+        .unwatch => return true, // ^
+        else => return false,
     }
 }
 fn printValue(ir: IR, out: anytype, indent: usize) @TypeOf(out).Error!void {
@@ -57,6 +65,7 @@ fn printValue(ir: IR, out: anytype, indent: usize) @TypeOf(out).Error!void {
                         try out.print("{}    return _{}_;\n", .{ idnt, bodyresid });
                     },
                 }
+                try out.print("{}", .{idnt});
                 try out.writeAll("}");
             } else {
                 try printValue(func.body.*, out, indent);
@@ -78,7 +87,9 @@ fn printValue(ir: IR, out: anytype, indent: usize) @TypeOf(out).Error!void {
             try printValue(ar.value.*, out, indent);
             try out.writeAll(")");
         },
-        else => std.debug.panic("unsupported {}", .{@tagName(ir)}),
+        else => {
+            try out.print("ō.TODO(\"{}\")", .{@tagName(ir)});
+        },
     }
 }
 const AutoPrintResult = union(enum) {
@@ -182,19 +193,46 @@ fn print(ir: IR, out: anytype, indent: usize, write_to: ?usize, return_blkid: us
             }
         },
         .attr => |ar| {
-            var arid = getNewID();
-            try print(ar.value.*, out, indent, arid, return_blkid);
+            const attrv = try printAuto(ar.value, out, indent, return_blkid);
             if (write_to) |wt| {
-                try out.print("{}var _{}_ = ō.attr(", .{ idnt, arid });
+                try out.print("{}var _{}_ = ō.attr(", .{ idnt, wt });
                 try printJSString(ar.name, out);
-                try out.print(", _{});\n", .{arid});
+                try out.print(", {});\n", .{attrv});
             }
         },
-        else => {
-            try out.print("{}", .{idnt});
-            if (write_to) |wt| try out.print("var _{}_ = ", .{wt});
-            try out.print("ō.TODO(\"{}\");\n", .{@tagName(ir)});
+        .math => |mth| {
+            const lhs = try printAuto(mth.lhs, out, indent, return_blkid);
+            const rhs = try printAuto(mth.rhs, out, indent, return_blkid);
+            if (write_to) |wt| {
+                // note: with printAuto, this doesn't work right and might skip
+                // necessary evaluations but whatever it doesn't matter rn.
+                // todo refactor codegen to be better and not incorrect.
+                try out.print("{}var _{}_ = {} ", .{ idnt, wt, lhs });
+                switch (mth.op) {
+                    .add => try out.writeAll("+"),
+                    .sub => try out.writeAll("-"),
+                    .mul => try out.writeAll("*"),
+                    .div => try out.writeAll("/"),
+                }
+                try out.print(" {};\n", .{rhs});
+            }
         },
+        .assign => |asn| {
+            // assign: struct { lval: *IR, rhs: *IR, watchable: bool },
+            const lhs = try printAuto(asn.lval, out, indent, return_blkid);
+            const rhs = try printAuto(asn.rhs, out, indent, return_blkid);
+
+            if (asn.watchable) try out.print("{}({}).set({});\n", .{ idnt, lhs, rhs }) //
+            else try out.print("{}{} = {};\n", .{ idnt, lhs, rhs });
+
+            if (write_to) |wt| try out.print("{}var _{}_ = undefined;\n", .{ idnt, wt });
+        },
+        .unwatch => |uw| {
+            const uwu = try printAuto(uw, out, indent, return_blkid);
+
+            if (write_to) |wt| try out.print("{}var _{}_ = ({}).value;\n", .{ idnt, wt, uwu });
+        },
+        else => unreachable, // caught above
     }
 }
 
