@@ -1,8 +1,8 @@
 file = expression[';'];
 
 expression =
-	| #operator(('+'<plus> | '-'<minus>)<op>)<plusminusop>
 	| #operator((('+' '=')<pleq> | ('-' '=')<meq> | '='<eq>)<op>)<assignop>
+	| #operator(('+'<plus> | '-'<minus>)<op>)<plusminusop>
 	| #suffix(suffixop)<suffixop>
 	| vardecl
 	| function

@@ -5,6 +5,8 @@ const Alloc = std.mem.Allocator;
 //! ir
 
 pub const MathOp = enum { add, sub, mul, div };
+
+// eventually this will be wrapped as struct {data: union(enum) {…}, src: usize};
 pub const IR = union(enum) {
     vardecl: struct {
         reassign: bool,
