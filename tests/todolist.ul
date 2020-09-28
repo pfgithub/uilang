@@ -54,3 +54,4 @@ const todoList = widget(bind list: <>string) {
 // jk there is no issue the top 2 will error for discarding return value
 // (void, void, i32) returns i32 (well actually it would error because `type` != `void`)
 // (i32, i32, i32) errors because only the last item implicitly returns
+// there could even be a error like "did you mean .fragment(.div, .div, .div)" if it sees html there
