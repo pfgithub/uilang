@@ -15,3 +15,59 @@ pub inline fn operator+ (lhs: number, rhs: number) {
 
 // anyway stuff like that in the stdlib that you import instead of having everything defined in uilang itself.
 // far future possible plan though so don't think about this too much and instead focus on making a working language first.
+
+// would it be neat if you could do
+
+blk: {
+	customArray.customMap(nowfn() {
+		break :blk;
+	});
+}
+
+// that would be neat
+// probably hard to implement though
+
+// the fn would be a special type of fn that can only be called until this expression is over. you can't like save it for later or something
+// because then break would no longer make sense. so also likely in codegen it would check the return value and choose what to break to.
+
+// like
+
+blk: {
+	const result = customArray.customMap(nowfn() {
+		return [1];
+	});
+	if(result[0] === 1) {
+		break :blk;
+	}
+	var _1_ = result[1];
+}
+
+// or this would also be an easy way to codegen
+
+blk: {
+	for(value of customArray.customMap()) {
+		break :blk;
+	}
+}
+
+// a bit more difficult with multiple fns. still doable though. you could just switch on value[0] and use value[1] as the value.
+
+// ok also so enums
+
+enum {base64}
+
+Buffer.from("", .base64)
+
+should
+
+switch(enum) {
+	.base64 => "base64"
+}
+
+but with that, in some cases switch can be optimized to `{}[key]` (with a constant object) or `{key: () => value}[key]()`
+
+so like there could be a constant object
+
+["baase64"]
+
+and it just does constobj[0] or something idk

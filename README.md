@@ -29,3 +29,20 @@ for the parser Generator
 	- comptime
 - inferred unions. eg `union {a: i53, b: struct {}}` and then `@as(that union, 25)` should automatically do .a. but if there is a conflict and the item you are coercing to the union can be coerced to more than one of the possible values, error and make you manually specify. (btw unions are union(enum) by default and also accessing fields can return optionals because zig should do that but can't because of the difference between `union` and `union(enum)`)
 - idk other things make the language first
+
+## zen
+
+just the zig zen with n/a parts removed
+
+* Communicate intent precisely.
+* Edge cases matter.
+* Favor reading code over writing code.
+* Only one obvious way to do things.
+* Runtime crashes are better than bugs.
+* Compile errors are better than runtime crashes.
+* Incremental improvements.
+* Avoid local maximums. (this will be difficult because rn the language will compile to js. it shouldn't compile to js forever, but that depends if I get the language to a usable point ever or not)
+* Reduce the amount one must remember.
+* Minimize energy spent on coding style.
+* ~~Resource deallocation must succeed.~~
+* Together we serve the users.

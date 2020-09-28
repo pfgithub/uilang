@@ -1,0 +1,56 @@
+// is it worth it to have <>string for linked(indexed, not actually backed by a linked list) lists? linked lists will probably be pretty frequent
+// idk
+
+fn bindOnInput(bind value: string) {
+	return fn(e) newitem = e.currentTarget.value;
+}
+
+const todoList = widget(bind list: <>string) {
+	state newitem: string = "";
+	trigger adviseFocus: i54; // triggers, when set, do a thing and then ø unset. eg this one sets focus and then the trigger goes away
+	
+	const addItem = fn() {
+		list.unshift(newitem);
+		newitem = "";
+	}
+	
+	return .div (
+		.input (:type="text", :value=newitem, :oninput = fn(e) newitem = e.currentTarget.value, :onkeydown = fn(e) if(e.code === "Enter") addItem()),
+		.button ("+ Add", :onclick = fn() addItem()),
+		list.map(ifn(item, i) (
+			.li (
+				.div ("Index: ", i, " "),
+				.input (:type="text", :value=item, :oninput=bindOnInput(&item), TODO adviseFocus,
+					:onkeydown = fn(k) (if(k.code === "Enter") list.insert("", i + 1), adviseFocus = i + 1)
+				)
+			)
+		))
+	)
+}
+// sort tells the list to keep a sorted copy
+// inserts are inserted sorted for better performance
+// (basically if you do sort it adds an index to the list so insertion can be high performance)
+// only if eg the sort algorithm changes, then a full resort is required
+// also same with a filter eg
+// there may be some way to have an exception for a filter getting more specific but probably not easily
+
+// ifn is a fn that is called immediately and thus does not stop control flow. eg a usage of ifn
+// fn doSomething(list: []string) main: {
+//     return list.map(ifn(item, i) {
+//         if(i === 12) break :main 0;
+//         return i;
+//     }).len;
+// }
+// would it be better if it trapped break and continue by default? idk
+
+// huh, parenthesis could be a bit misleading
+// return (
+//    .div(),
+//    .div(),
+//    .div(),
+// );
+// it will only return the last div
+// you actually have to use a fragment there
+// jk there is no issue the top 2 will error for discarding return value
+// (void, void, i32) returns i32 (well actually it would error because `type` != `void`)
+// (i32, i32, i32) errors because only the last item implicitly returns

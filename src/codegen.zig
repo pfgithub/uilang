@@ -39,6 +39,41 @@ fn requiresBlock(ir: IR) bool {
         else => return false,
     }
 }
+
+const SimpleExprs = struct {
+    number = "{#.num}",
+    string = "{'.str}",
+    varget = "{@.vnm}",
+    attr = "ō.attr({'.name}, {.value})",
+};
+
+// checks if any children require block printing
+fn printUnified(ir: IR, out: anytype, indent: usize, return_blkid: bool, allow_block: bool) @TypeOf(out).Error!void {
+    const idnt = IndentWriter{ .count = indent };
+    // const out_left = OutLeftWriter{.outvar = };
+    switch (ir) {
+        .number => |num| try out.print("{}{}{}", .{ out_left, num, out_right }),
+        .string => |str| try out.print("{}{}{}", .{ out_left, printString(str), out_right }),
+        .varget => |vnm| try out.writeAll(vnm),
+        .attr => |atr| {
+            const atrv = try printAuto(atr.value, out, indent, return_blkid, allow_block);
+            try out.print("{}ō.attr({}, {}){}", .{ out_left, printString(atr.name), atrv, out_right });
+        },
+        .assign => |av| {
+            // lhs's last layer must be inline (if !watchable) otherwise this obviously
+            // won't work. there should be some way to assert that
+            const lhs = try printAuto(av.lval, out, indent, return_blkid, allow_block);
+            const rhs = try printAuto(av.rhs, out, indent, return_blkid, allow_block);
+            switch (av.watchable) { // hmm…
+                true => try out.print("{}({}).set({}){}", .{ out_left, lhs, rhs, out_right }),
+                false => try out.print("{}(({} = {}), undefined){}", .{ out_left, lhs, rhs, out_right }),
+            }
+        },
+        // .html can still be done without allocation. just construct printAuto return values oh uuh hmm idk
+        // it would be easy if a bit of information could be stored with the ir
+    }
+}
+
 fn printValue(ir: IR, out: anytype, indent: usize) @TypeOf(out).Error!void {
     const idnt = IndentWriter{ .count = indent };
 
@@ -245,6 +280,15 @@ fn printJSString(str: []const u8, out: anytype) !void {
     };
     try out.writeByte('"');
 }
+fn printString(str: []const u8) StringPrinter {
+    return .{ .string = str };
+}
+const StringPrinter = struct {
+    string: []const u8,
+    pub fn format(spr: StringPrinter, comptime fmt: []const u8, options: std.fmt.FormatOptions, out: anytype) !void {
+        try printJSString(spr.string, out);
+    }
+};
 
 const IndentWriter = struct {
     count: usize,
