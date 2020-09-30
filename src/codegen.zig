@@ -192,7 +192,7 @@ fn print(ir: IR, out: anytype, indent: usize, write_to: ?usize, return_blkid: us
         },
         .vardecl_w => |vd| {
             const printed = try printAuto(vd.initial, out, indent, return_blkid);
-            try out.print("{}var {} = ō.watchable({});\n", .{ idnt, vd.jsname, printed });
+            try out.print("{}var {} = ō.watchable_primitive({});\n", .{ idnt, vd.jsname, printed });
             if (write_to) |wt| try out.print("{}var _{}_ = undefined;\n", .{ idnt, wt });
         },
         .number, .string, .varget, .func => unreachable, // caught in requiresBlock
