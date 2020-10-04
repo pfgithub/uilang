@@ -43,6 +43,7 @@ just the zig zen with n/a parts removed
 * Incremental improvements.
 * Avoid local maximums. (this will be difficult because rn the language will compile to js. it shouldn't compile to js forever, but that depends if I get the language to a usable point ever or not)
 * Reduce the amount one must remember.
-* Minimize energy spent on coding style.
-* ~~Resource deallocation must succeed.~~
+* Focus on code rather than style.
+* Resource allocation may fail; resource deallocation must succeed.
+* ~~Memory is a resource.~~ Memory is infinite and will never end. If you run out, just download more.
 * Together we serve the users.
