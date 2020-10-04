@@ -7,3 +7,11 @@ const counter = widget() {
 		.button("--", :onclick = fn() counted = counted - 1),
 	);
 }
+
+//const show_hide = widget() {
+//	state visible = false;
+//	return .div(
+//		if(visible) counter() else null,
+//		.button(if(visible) "Hide" else "Show", :onclick=fn() visible =! visible),
+//	);
+//}

@@ -92,8 +92,13 @@ const ō = {
 					// remove existing node
 					if(prev_node) prev_node.removeSelf();
 					// create real nodes
-					let new_node = ō.user_element(new_user_node);
-					prev_node = new_node.createBefore(parent, node_after);
+					if(typeof new_user_node !== "object") {
+						node_after.nodeValue = "" + new_user_node;
+						prev_node = {removeSelf() {node_after.nodeValue = "";}};
+					}else {
+						let new_node = ō.user_element(new_user_node);
+						prev_node = new_node.createBefore(parent, node_after);
+					}
 					
 					if(window.on_node_update) window.on_node_update(parent);
 				};
