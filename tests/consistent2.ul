@@ -8,6 +8,32 @@ const counter = widget() {
 	);
 }
 
+//const lang_feature_demo = fn() {
+//	const result = blk: {
+//		// || functions can be broken through
+//		// || functions cannot be stored and called later, they
+//		//    will error if called after the line is over
+//      //    calling these functions will require special syntax
+//      //    because they might break and hidden control flow is bad
+//      // mayreturn cb();
+//      //    also || fns probably won't catch return, instead requiring
+//      //    labeled breaks probably. || blk: {break :blk}
+//      //    so eg `try` returns from the outer fn rather than the inner fn
+//		(|| {
+//			break :blk false;
+//		})()
+//		// this will runtime unreachable:
+//		const saved = || {
+//			break :blk false;
+//		};
+//		saved();
+//		// this is ok
+//		list.map(|| {
+//			break :blk false;
+//		});
+//	}
+//}
+
 //const show_hide = widget() {
 //	state visible = false;
 //	return .div(
