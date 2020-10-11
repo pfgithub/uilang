@@ -14,7 +14,10 @@ expression =
 	| variable
 	| number
 	| string
+	| builtinexpr
 ;
+
+builtinexpr = '@' identifier<name> '(' expression[',']<args> ')';
 
 // TODO (':' expression<*>)?<ttype>
 vardecl =
@@ -38,6 +41,10 @@ variable = identifier<name> .;
 number = :number;
 string = :string_start<> #lockin() (:string | :string_escape<escape>)[]<bits> :string_end<>;
 
-suffixop = '!';
+suffixop =
+	| '!'<unused>
+	| ('.' identifier)<fieldaccess>
+	| ('(' expression[',']<args> ')')<call>
+;
 
 identifier = :identifier; // to allow for future expansion

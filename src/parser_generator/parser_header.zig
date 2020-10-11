@@ -83,7 +83,7 @@ pub const Tokenizer = struct {
                             tkr.state = .comment;
                         },
                         else => |char| {
-                            inline for ("[]{}();:,=|?<>!#*+/-.") |c| {
+                            inline for ("[]{}();:,=|?<>!#*+/-.@") |c| {
                                 if (char == c) {
                                     _ = tkr.take();
                                     return tkr.token(start, .punctuation);
@@ -242,6 +242,7 @@ pub fn parse(alloc: *Alloc, code: []const u8, comptime a: anytype) !GetResType(_
         },
     };
     if ((try parser.nextToken())) |tok| {
+        try printErrorPos(parser.tokenizer.text, "Remaining token", tok.start, out);
         std.debug.panic("Remaining token: {}\n", .{tok});
     }
     return outmain;
