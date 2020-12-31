@@ -1,0 +1,13 @@
+const counter = widget() {
+	state counted: i53 = namespace_example.initial_counted_value;
+	return .div(
+		:class="counter",
+		.button("++", :onclick = fn() counted = counted + 1),
+		.span(" ", counted, " "),
+		.button("--", :onclick = fn() counted = counted - 1),
+	);
+};
+
+pub const main = fn() {
+	@demo(counter);
+};

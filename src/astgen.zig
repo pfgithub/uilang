@@ -8,6 +8,13 @@ usingnamespace @import("help.zig");
 //! ast → ir
 //! (also does typechecking I guess)
 
+// ok so namespace{}
+// it has to make a type
+// it does not analyze stuff until used
+// rather than being placed in locally, it gets inserted into the code as a global constant
+// (ir will have a second section for inserting constants I guess and then both will be written to the file, constants first)
+// how does that work uuh
+
 pub fn astToIR(alloc: *Alloc, file: ast.File) !IR {
     var renv = Environment.init(alloc, null, .{});
     defer renv.deinit();
@@ -641,6 +648,24 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
                 },
                 else => std.debug.panic("TODO {} operator", .{@tagName(opitms[1].op)}),
             }
+        },
+        .builtinexpr => |bxpr| {
+            if (std.mem.eql(u8, bxpr.name.*, "import_std")) {
+                if (bxpr.args.len != 0) return reportError("bad args");
+                return EvalExprResult{
+                    .assignable = false,
+                    .t_type = .{ .watchable = false, .tkind = .t_type },
+                    .ir = .{
+                        .t_type = .{
+                            .watchable = false,
+                            .tkind = .{
+                                .namespace = .{},
+                            },
+                        },
+                    },
+                };
+            }
+            return reportError("Unknown builtinexpr {}");
         },
         else => std.debug.panic("TODO .{}", .{@tagName(decl)}),
     }

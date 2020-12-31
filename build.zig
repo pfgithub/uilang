@@ -62,4 +62,21 @@ pub fn build(b: *Builder) void {
         const pg_step = b.step("uilang", "Build the uilang");
         pg_step.dependOn(&uil.install_step.?.step);
     }
+
+    {
+        const uil = b.addExecutable("uilang2", "src/uilang2.zig");
+        uil.setTarget(target);
+        uil.setBuildMode(mode);
+        addParser("src/uilang.resyn", "uilang_parser", uil, b);
+        uil.install();
+
+        const pg_step = b.step("uilang2", "Build the uilang2");
+        pg_step.dependOn(&uil.install_step.?.step);
+
+        const run_cmd = uil.run();
+        run_cmd.step.dependOn(&uil.install_step.?.step);
+
+        const run_step = b.step("run-uilang2", "Test the uilang2");
+        run_step.dependOn(&run_cmd.step);
+    }
 }

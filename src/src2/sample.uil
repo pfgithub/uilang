@@ -1,0 +1,8 @@
+const other = fn() {
+    var result = 25;
+    return result;
+};
+
+pub const main = fn() {
+    return other2();
+};

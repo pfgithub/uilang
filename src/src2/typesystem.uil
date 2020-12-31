@@ -1,0 +1,29 @@
+const DemoType = "a";
+const DemoString = "a";
+
+const mystring: DemoType = DemoString; // why does this work? well a string is in the type union
+
+const type = union(enum) {
+    string,
+    number,
+}
+
+const test: type = "hi";
+
+// "hi" can be coerced to type because it is in the union. unions auto-coerce.
+
+// it will be important to figure out pattern matching eventually. not yet.
+
+// ok.
+
+const operator = union(enum) {"+", "-", "×", "÷"};
+
+// huh
+
+const thing: operator = "+"; // ok, coerces to [0, "+"]
+
+const thing: operator = @as(string, "+"); // not ok. string cannot be coerced to union(enum) {"+", "-", "×", "÷"}
+
+const thing: operator = match(string) {
+    "+", "-", "×", "÷" => |v| v, // huh
+}

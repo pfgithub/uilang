@@ -1,11 +1,20 @@
-file = expression[';'];
+file = decl[';'];
 
+// eg namespace{} is decl[';']
+decl =
+	| ('pub' vardecl)<pubvariable>
+	| vardecl
+;
+
+// cast syntax: <i32>some_expression();
+// TODO prefix operators here
 expression =
 	| #operator((('+' '=')<pleq> | ('-' '=')<meq> | '='<eq>)<op>)<assignop>
 	| #operator(('+'<plus> | '-'<minus>)<op>)<plusminusop>
 	| #suffix(suffixop)<suffixop>
 	| vardecl
 	| function
+	| namespaceexpr
 	| returnstatement
 	| htmlelement
 	| htmlattribute
@@ -19,11 +28,12 @@ expression =
 
 builtinexpr = '@' identifier<name> '(' expression[',']<args> ')';
 
-// TODO (':' expression<*>)?<ttype>
 vardecl =
-	('let'<let> | 'const'<const_> | 'state'<state> | 'trigger'<trigger>)<vartype> #lockin()
-	identifier<name> ((':' expression<texpr>)<ttype> | ('=' expression<initv>)<auto>)<initmode>
+	(('var'<a> | 'let'<b>)<let> | 'const'<const_> | 'state'<state> | 'trigger'<trigger>)<vartype> #lockin()
+	identifier<name> '=' expression<initv>
 ;
+
+namespaceexpr = 'namespace' '{' decl[';']<body> '}';
 
 // returns from a function, not a block or some parenthesis
 returnstatement = 'return' expression;

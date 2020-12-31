@@ -1,0 +1,101 @@
+// https://github.com/ahfarmer/calculator
+// a copy of react calculator but in uil
+
+// unrelated: this syntax for if would be neat
+
+// if true, 0 else 1
+// if (true) 0 else 1
+// if true {0} else {1}
+
+const NumberButton = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+const ButtonName = "AC" | "±" | "%" | "÷" | "×" | numberButton | "-" | "+" | "." | "=";
+
+const CalculatorState = {total: ?f64, next: ?f64, operation: ?f64};
+
+const Partial = fn(intype: type) {
+    return intype.object().replaceEntries() |key, value| {(key): ?(value) = null};
+}
+
+const calculate = fn(obj: CalculatorState, buttonName: ButtonName): Partial(CalculatorState) {
+    match(buttonName) {
+        "AC" => return {.total = null, .next = null, .operation = null},
+        NumberButton => |btn| {
+            if(btn == "0" and obj.next == "0") return {};
+            // If there is an operation, update next
+            if(obj.operation) {
+                if(obj.next) |nxt| {
+                    return {.next = nxt ++ btn};
+                }
+                return {next: btn};
+            }
+            // If there is no operation, update next and clear the value
+            if(obj.next) |cnxt| {
+                const next = if cnxt == "0", btn else obj.next ++ btn;
+                return {.next = next, .total = null};
+            }
+            return {.next = btn, .total = null};
+        },
+        "%" => {
+            if(obj.operation and obj.next) {
+                const result = operate(obj.total, obj.next, obj.operation);
+                return {
+                    .total = (Rational.fromString(result) / Rational.fromString("100")).toString(),
+                    .next = null,
+                    .operation = null,
+                };
+            }
+        },
+        "." => {
+            // …
+        },
+        // …
+    }
+}
+
+const App = component() {
+    state cs: CalculatorState = {.total = null, .next = null, .operation = null};
+
+    const handleClick = fn(buttonName) {
+        calcState = {...calcState, calculate(cs, buttonName)};
+    };
+
+    return .div(:class=["component-app"],
+        Display(:value=(cs.next orelse cs.total orelse "0")),
+        ButtonPanel(:onclick=handleClick),
+    )    
+};
+
+const ButtonPanel = component(:onclick: fn(name: string) void) {
+    const buttons: [](string | [string, attribute]) = [
+        ["AC", "±", "%",         ["÷", :orange=true]],
+        ["7",  "8", "9",         ["×", :orange=true]],
+        ["4",  "5", "6",         ["-", :orange=true]],
+        ["1",  "2", "3",         ["+", :orange=true]],
+        [["0", :wide=true], ".", ["=", :orange=true]]
+    ];
+
+    return .div(:class=["component-button-panel"],
+        buttons.map() |btnline| .div(
+            btnline.map() |btntxt| blk: {
+                const [text, attrs] = match(btntxt) {
+                    [text, ...attrs] => [text, attrs],
+                    text => [text, []],
+                }
+                break :blk Button(:name=btntxt, :onclick=onclick, …attrs);
+            }
+        )
+    );
+};
+
+const Button = component(:name: string, :orange: bool = false, :wide: bool = false, onclick: fn(name: string) void) {
+    return .div(
+        :class=["component-button", if(orange) "orange" else ø, if(wide) "wide" else ø],
+        .button(:onclick=fn() onclick(name), name)
+    );
+};
+
+const Display = component(:value: string) {
+    return .div(:class="component-display"
+        .div(value)
+    );
+};

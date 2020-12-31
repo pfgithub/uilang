@@ -243,6 +243,7 @@ pub fn parse(alloc: *Alloc, code: []const u8, comptime a: anytype) !GetResType(_
     };
     if ((try parser.nextToken())) |tok| {
         try printErrorPos(parser.tokenizer.text, "Remaining token", tok.start, out);
+        try printErrorPos(parser.tokenizer.text, "(farthest)", parser.farthest, out);
         std.debug.panic("Remaining token: {}\n", .{tok});
     }
     return outmain;

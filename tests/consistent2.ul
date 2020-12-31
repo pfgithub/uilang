@@ -1,7 +1,9 @@
-const std = @import("std");
+const namespace_example = namespace {
+	const initial_counted_value = 10;
+};
 
 const counter = widget() {
-	state counted: i53 = 0;
+	state counted: i53 = namespace_example.initial_counted_value;
 	return .div(
 		:class="counter",
 		.button("++", :onclick = fn() counted = counted + 1),
@@ -10,9 +12,9 @@ const counter = widget() {
 	);
 };
 
-const main = fn() {
-	std.demo(counter);
-};
+//pub const main = fn() {
+//	@demo(counter);
+//};
 
 //const lang_feature_demo = fn() {
 //	const result = blk: {
