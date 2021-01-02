@@ -6,3 +6,22 @@ const other = fn() {
 pub const main = fn() {
     return other2();
 };
+
+const UserInput = widget() html: {
+    state value = string: "";
+    memo value_num = f64: value»Number(#) catch null;
+
+    return .div(
+        .input(.value = value, .onchange = fn(e) value = e.currentTarget.value),
+        .submit(.enabled=value_num != null, "Submit!"),
+    );
+};
+
+const Counter = widget() html: {
+    state value = i52: 25;
+    return .div(
+        .button("--", .onclick = fn() void: value = value - 1),
+        "Value: ", value,
+        .button("++", .onclick = fn() void: value = value + 1),
+    );
+};

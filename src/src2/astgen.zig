@@ -19,6 +19,44 @@ pub fn main() !void {
     try printAst(parsed, out, IndentWriter{});
 }
 
+const Namespace = struct {
+    declarations: std.StringHashMap(*Declaration),
+
+    pub fn new(alloc: *std.mem.Allocator) *Namespace {
+        return allocDupe(alloc, Namespace{
+            .declarations = std.StringHashMap(*Declaration).init(alloc),
+        }) catch @panic("oom");
+    }
+};
+const Declaration = struct {};
+const Environment = struct {
+    alloc: *std.mem.Allocator,
+    parent: ?*Environment,
+    declarations: std.StringHashMap(*Declaration),
+
+    pub fn new(parent_env: *Environment) *Environment {
+        return allocDupe(parent_env.alloc, Environment{
+            .alloc = parent_env.alloc,
+            .parent = parent_env,
+            .declarations = std.StringHashMap(*Declaration).init(alloc),
+        }) catch @panic("oom");
+    }
+};
+
+fn addDecl(
+    env: *Environment,
+    namespace: *Namespace,
+) void {}
+
+fn readNamespace(node: ast.File, parent_env: *Environment) Namespace {
+    var env = Environment.new(parent_env);
+    var namespace = Namespace.new(parent_env.alloc);
+
+    for (node) |decl| {
+        addDecl(&env, &namespace, decl);
+    }
+}
+
 fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Error!void {
     // inline switch #7224
     switch (@TypeOf(node)) {

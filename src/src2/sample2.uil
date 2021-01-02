@@ -1,0 +1,93 @@
+const SongAddPanel = widget(onclose) html: {
+    state mode = union{
+        .main,
+        .executing,
+        .exec_error,
+    }: .main{.errors = []};
+    state exec_output = []string: [];
+
+    state tab = enum{.youtube, .file}: .youtube;
+    state youtube_videoid = string: "";
+    state file_filepath = ?string: null;
+    state song_title = string: "";
+    state tempo = string: "";
+
+    memo [errors, cmds] = [[]string, []string]: →blk {
+        let missing = []string: [];
+        let rescmd = []string: [];
+        rescmd.push(["[", "!", "-f", dist_path, "]"]);
+        switch(tab) {
+            .youtube => {
+                let videoid = youtube_videoid;
+                if(videoid»String.includes("v=")) {
+                    videoid = js.js_try(|_| js.URL.new(videoid).search) catch |e| "";
+                }
+                const safevideoid = videoid»String.replace(/[^a-zA-Z0-9\-_]/g, "!");
+                rescmd.push(["youtube-dl", "https://www.youtube.com/watch?v="+safevideoid, "--extract-audio", "--audio-format", "mp3", "-o", 'dnl0."%(ext)s"']);
+                if(safevideoid.utf16len == 0) missing»Array.push("youtube video id");
+            },
+            .file => {
+                rescmd.push(["cp", file_filepath, "dnl0.mp3"]);
+                if (file_filepath.utf16len == 0) missing.push("file not chosen");
+            },
+        }
+
+        const tempo_num = f64: tempo»Number catch 0;
+        if(tempo_num > 1) {
+            rescmd.push(…);
+        }else if(tempo_num == 1) {
+            …
+        }else{
+            missing.push("Playback rate not set or is below 1");
+        }
+
+        if(song_title == "") missing.push("title not set");
+
+        rescmd.push(…);
+
+        ←blk [missing, rescmd];
+    };
+
+    return [
+        .h1("Add Song"),
+        .div(.class="hlist",
+            .button(switch(mode) {.main => .disabled = errors.len > 0, .executing => .disabled, .exec_error => []}, .class=[.lyricsedtr-button], .onclick=exec,
+                switch(mode) {.exec_error => "↺ Retry", .executing => "…", .main => "+ Add"}
+            ),
+            .button(.disabled= mode.executing, .class=[.lyricsedtr-button, .unimportant], .onclick=close, "Cancel"),
+        )
+        if(mode.executing or mode.exec_error) [
+            .div(.class=[.hlist],
+                .button(.class=[.lyriscedtr-button], .enabled=mode.exec_error, "Edit, .onclick=fn() mode = .main),
+            ),
+            .div(.class=[.cmdline],
+                exec_output»Array.map |l| .div("Out: ", .code(l)),
+            )
+        ] else [
+            .h2("File:"),
+            .div(.class=[.tablist],
+                inline for([[.youtube, "Youtube"], [.file, "Local File"]]) |[thistab, text]| [
+                    .button(.class=[.lyricsedtr-button, if(tab == thistab) [] else "unimportant"], text, .onclick=fn() tab = thistab),
+                ],
+            ),
+            switch(tab) {
+                .youtube => .div(
+                    .label("watch?v=", .input(.type="text", .class=[.lyricsedtr-input], .style="width: auto;", ...bind(&youtube_videoid))),
+                ), .file => .div(
+                    .input(.type="file", .onchange=fn(e) file_filepath = e.currentTarget.files[0].path),
+                ),
+            },
+            .h2("Speed:"),
+            .div(
+                .input(.type="text", .placeholder="Artist · Another - Song Title", .class=[.lyricsedtr-input], ...bind(&song_title)),
+            ),
+            if(errors.length > 0) [
+                .h2("Errors:"),
+                .ul(errors»Array.map |err| .li(err) ),
+            ] else [
+                .h2("Command:"),
+                .code(cmds»Array.map |part| .div(.class=[.cmdline], (part»Array.map |cmdbit| .span(.class=[.cmdpart], cmdbit))»Array.join() |_| " ")),
+            ],
+        ],
+    ];
+};
