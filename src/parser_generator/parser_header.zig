@@ -83,7 +83,7 @@ pub const Tokenizer = struct {
                             tkr.state = .comment;
                         },
                         else => |char| {
-                            inline for ("[]{}();:,=|?<>!#*+/-.@") |c| {
+                            inline for ("[]{}();:,=|?<>!#*+/-.@^") |c| {
                                 if (char == c) {
                                     _ = tkr.take();
                                     return tkr.token(start, .punctuation);
@@ -98,6 +98,7 @@ pub const Tokenizer = struct {
                     'a'...'z', 'A'...'Z', '0'...'9', '_', 128...255 => _ = tkr.take(),
                     else => {
                         tkr.state = .main;
+                        // TODO support keywords
                         return tkr.token(start, .identifier);
                     },
                 },
@@ -177,7 +178,7 @@ pub fn printSyntaxHighlight(text: []const u8, out: anytype) @TypeOf(out).Error!v
             .string_end => try out.writeAll("\x1b[32m"),
             .string => try out.writeAll("\x1b[92m"),
             .string_escape => try out.writeAll("\x1b[94m"),
-            .punctuation => try out.writeAll(""),
+            .punctuation => try out.writeAll("\x1b[38;5;245m"),
             .number => try out.writeAll("\x1b[96m"),
         }
         for (tokenizer.text[start..here]) |char| {

@@ -1,3 +1,5 @@
+const std = @import("std");
+
 const other = fn() {
     var result = 25;
     return result;
@@ -9,19 +11,30 @@ pub const main = fn() {
 
 const UserInput = widget() html: {
     state value = string: "";
-    memo value_num = f64: value»Number(#) catch null;
+    memo value_num = f64: value^Number(#) catch null;
 
-    return .div(
-        .input(.value = value, .onchange = fn(e) value = e.currentTarget.value),
-        .submit(.enabled=value_num != null, "Submit!"),
-    );
+    return .div[
+        .input[.value = value, .onchange = fn(e) value = e.currentTarget.value],
+        .submit[.enabled=value_num != null, "Submit!"],
+    ];
 };
 
 const Counter = widget() html: {
-    state value = i52: 25;
-    return .div(
-        .button("--", .onclick = fn() void: value = value - 1),
-        "Value: ", value,
-        .button("++", .onclick = fn() void: value = value + 1),
-    );
+    state value = i51: 25;
+    return .div[
+        .button["--", .onclick = fn() void: value = value - 1],
+        "Value: ", string: value,
+        .button["++", .onclick = fn() void: value = value + 1],
+    ];
 };
+
+// react
+//
+// function Counter() {
+//     const [value, setValue] = useState(25);
+//     return <div>
+//         <button onclick={() => setValue(value - 1)}>--</button>
+//         Value: {value}
+//         <button onclick={() => setValue(value + 1)}>++</button>
+//     </div>
+// }

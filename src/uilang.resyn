@@ -27,7 +27,7 @@ expression =
 	| builtinexpr
 ;
 
-pipelineplaceholder = '#';
+pipelineplaceholder = '#' identifier?;
 
 builtinexpr = '@' identifier<name> '(' expression[',']<args> ')';
 
@@ -42,27 +42,31 @@ namespaceexpr = 'namespace' '{' decl[';']<body> '}';
 returnstatement = 'return' expression;
 
 dotitem = '.' #lockin() (htmlelement | htmlattribute)<value>;
-htmlelement = identifier<tag> parens;
+htmlelement = identifier<tag> array;
 htmlattribute = identifier<attrname> '=' expression<value>;
 
 // returns the last expression
 parens = '(' #lockin() expression[',']<items> ')';
+// returns all expressions in an array
+array = '[' #lockin() (('…' expression)<spread> | expression)[',']<items> ']';
 // can be broken out of (or returned if it's a function block)
 block = '{' #lockin() expression[';']<decls> '}';
 
 function = ('widget'<widget> | 'fn'<function>)<kind> #lockin() '(' identifier[',']<args> ')' expression;
 
-variable = identifier<name> .;
+variable = identifier<name> .; // TODO add a postprocessing thing so @"this kind of identifier" is converted into an []const u8 with a flag saying it originated as an @"" ident to disable builtin types eg @"i8"≠i8
 number = :number;
 string = :string_start<> #lockin() (:string | :string_escape<escape>)[]<bits> :string_end<>;
 
 suffixop =
 	| ('.' identifier)<fieldaccess>
-	| ('»' identifier)<pipeline>
+	| ('^' identifier)<pipeline>
 	| ('catch' expression)<catchexpr>
 	| ('orelse' expression)<orelseexpr>
 	| ('(' expression[',']<args> ')')<call>
 	| (':' expression)<implicitcast>
+    | ('[' ']')<array_type>
+    | ('?')<optional_type>
 ;
 
 identifier = :identifier; // to allow for future expansion

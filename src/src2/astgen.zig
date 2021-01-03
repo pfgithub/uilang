@@ -16,7 +16,18 @@ pub fn main() !void {
     const parsed = try ast.parse(alloc, sample, .File);
 
     const out = std.io.getStdOut().writer();
-    try printAst(parsed, out, IndentWriter{});
+
+    try ast.printSyntaxHighlight(blk: {
+        var al = std.ArrayList(u8).init(alloc);
+        const al_out = al.writer();
+        try printAst(parsed, al_out, .{});
+        break :blk al.toOwnedSlice();
+    }, out);
+
+    const root_env = Environment.newRoot(alloc);
+    const root_ns = Namespace.new(alloc);
+
+    // parse file into root_ns and root_env
 }
 
 const Namespace = struct {
@@ -33,6 +44,14 @@ const Environment = struct {
     alloc: *std.mem.Allocator,
     parent: ?*Environment,
     declarations: std.StringHashMap(*Declaration),
+
+    pub fn newRoot(alloc: *std.mem.Allocator) *Environment {
+        return allocDupe(alloc, Environment{
+            .alloc = alloc,
+            .parent = null,
+            .declarations = std.StringHashMap(*Declaration).init(alloc),
+        }) catch @panic("oom");
+    }
 
     pub fn new(parent_env: *Environment) *Environment {
         return allocDupe(parent_env.alloc, Environment{
@@ -57,6 +76,28 @@ fn readNamespace(node: ast.File, parent_env: *Environment) Namespace {
     }
 }
 
+fn printExpr(node: ast.Expression, out: anytype, indent: IndentWriter) @TypeOf(out).Error!void {
+    switch (node) {
+        .function => |n| try printAst(n.*, out, indent),
+        .builtinexpr => |n| try printAst(n.*, out, indent),
+        .string => |n| try printAst(n.*, out, indent),
+        .block => |n| try printAst(n.*, out, indent),
+        .variable => |n| try printAst(n.*, out, indent),
+        .vardecl => |n| try printAst(n.*, out, indent),
+        .suffixop => |sfxop| {
+            try printAst(sfxop._.*, out, indent);
+            switch (sfxop.suffixop.*) {
+                .implicitcast => |implc| {
+                    try out.writeAll(": ");
+                    try printAst(implc.expression.*, out, indent);
+                },
+                else => try out.print("«<{}>»", .{std.meta.tagName(sfxop.suffixop.*)}),
+            }
+        },
+        else => try out.print("@todo(.{})", .{std.meta.tagName(node)}),
+    }
+}
+
 fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Error!void {
     // inline switch #7224
     switch (@TypeOf(node)) {
@@ -78,14 +119,9 @@ fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Erro
             try out.print("{} {} = ", .{ std.meta.tagName(node.vartype), node.name.* });
             try printAst(node.initv.*, out, indent);
         },
-        ast.Expression => {
-            switch (node) {
-                .function => |n| try printAst(n.*, out, indent),
-                else => try out.print("@todo(.{})", .{std.meta.tagName(node)}),
-            }
-        },
+        ast.Expression => try printExpr(node, out, indent),
         ast.Function => {
-            try out.print("{} (", .{std.meta.tagName(node.kind)});
+            try out.print("{}(", .{std.meta.tagName(node.kind)});
             for (node.args) |arg, i| {
                 if (i != 0) try out.writeAll(", ");
                 try out.print("{}", .{arg});
@@ -93,7 +129,37 @@ fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Erro
             try out.writeAll(") ");
             try printAst(node.expression.*, out, indent);
         },
-        ast.Block => {},
+        ast.String => {
+            try out.writeByte('"');
+            for (node.bits) |bit| switch (bit) {
+                .string => |sbit| try out.writeAll(sbit),
+                .escape => |escbit| try out.writeAll(escbit),
+            };
+            try out.writeByte('"');
+        },
+        ast.Builtinexpr => {
+            // name: *Identifier, args: []expression
+            try out.print("@{}(", .{node.name.*});
+            for (node.args) |arg, i| {
+                if (i != 0) try out.writeAll(", ");
+                try printAst(arg, out, indent);
+            }
+            try out.writeAll(")");
+        },
+        ast.Block => {
+            try out.writeAll("{");
+            for (node.decls) |expr, i| {
+                try out.print("\n{}", .{indent.add(1)});
+                try printAst(expr, out, indent.add(1));
+                try out.writeAll(";");
+            }
+            if (node.decls.len > 0) try out.print("\n{}", .{indent});
+            try out.writeAll("}");
+        },
+        ast.Variable => {
+            try out.writeAll(node.name.*);
+        },
+
         else => try out.writeAll("@todo(" ++ @typeName(@TypeOf(node)) ++ ")"),
     }
 }
