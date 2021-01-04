@@ -27,8 +27,72 @@ pub fn main() !void {
     const root_env = Environment.newRoot(alloc);
     const root_ns = Namespace.new(alloc);
 
+    for (parsed) |decl| {
+        const name = decl.vardecl.vardecl.name.*;
+        const initv = decl.vardecl.vardecl.initv;
+
+        const decl_v = Declaration.new(alloc, root_env, initv);
+        try root_ns.put(name, decl_v);
+        try root_env.put(name, decl_v);
+    }
+
+    //root_ns.get("main");
+
     // parse file into root_ns and root_env
 }
+
+const Data = struct {
+    ty: *Val,
+    val: ?*Val, // null if the value is only known at runtime
+};
+
+// const a = "hi";
+// typeof a is "hi"
+// const a = string: "hi"
+// typeof a is type{string}
+// const b = "hi": a;
+// this is not valid; a is string, string might ≠ "hi"
+// ah ok
+
+const Val = union(enum) {
+    typ: struct {
+        // workaround because zig compiler doesn't like `type: @TagType(@This())` atm
+        value: u32,
+        fn get(slf: @This()) @TagType(Val) {
+            return @intToEnum(@TagType(Val), slf.value);
+        }
+        fn set(val: @TagType(Val)) @This() {
+            return .{ .value = @enumToInt(val) };
+        }
+    },
+    number: f64,
+    float: f64,
+    comptime_string: []const StringBit,
+    string: []const u8,
+};
+
+const Declaration = struct {
+    value: union(enum) {
+        uninitialized: struct {
+            env: *Environment,
+            code: *ast.Expression,
+        },
+        analyzing: void,
+        initialized: struct {
+            data: Data,
+        },
+    },
+    pub fn new(alloc: *std.mem.Allocator, env: *Environment, code: *ast.Expression) *Declaration {
+        return allocDupe(alloc, Declaration{
+            .value = .{ .uninitialized = .{ .env = env, .code = code } },
+        }) catch @panic("oom");
+    }
+};
+
+const StringBit = union(enum) {
+    text: []const u8,
+    sub_bit: *StringBit, // "\{one\{two}three}", to be used for eg std.fmt("Hi \{name}", .name="test");
+};
 
 const Namespace = struct {
     declarations: std.StringHashMap(*Declaration),
@@ -38,8 +102,12 @@ const Namespace = struct {
             .declarations = std.StringHashMap(*Declaration).init(alloc),
         }) catch @panic("oom");
     }
+    pub fn put(ns: *Namespace, name: []const u8, decl: *Declaration) !void {
+        const v = ns.declarations.getOrPut(name) catch @panic("oom");
+        if (v.found_existing) return error.DuplicateVarName;
+        v.entry.value = decl;
+    }
 };
-const Declaration = struct {};
 const Environment = struct {
     alloc: *std.mem.Allocator,
     parent: ?*Environment,
@@ -59,6 +127,13 @@ const Environment = struct {
             .parent = parent_env,
             .declarations = std.StringHashMap(*Declaration).init(alloc),
         }) catch @panic("oom");
+    }
+
+    pub fn put(env: *Environment, name: []const u8, decl: *Declaration) !void {
+        // todo no shadow
+        const v = env.declarations.getOrPut(name) catch @panic("oom");
+        if (v.found_existing) return error.DuplicateVarName;
+        v.entry.value = decl;
     }
 };
 
@@ -107,13 +182,11 @@ fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Erro
             try out.writeAll(";\n");
         },
         ast.Decl => switch (node) {
-            .pubvariable => |pvd| {
-                try out.writeAll("pub ");
-                try printAst(pvd.vardecl.*, out, indent);
-            },
             .vardecl => |vd| {
-                try printAst(vd.*, out, indent);
+                if (vd.public) |_| try out.writeAll("pub ");
+                try printAst(vd.vardecl.*, out, indent);
             },
+            else => @panic("notprintsupport"),
         },
         ast.Vardecl => {
             try out.print("{} {} = ", .{ std.meta.tagName(node.vartype), node.name.* });

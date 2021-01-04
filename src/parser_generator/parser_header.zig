@@ -115,6 +115,9 @@ pub const Tokenizer = struct {
                         tkr.state = .string_ending;
                         return tkr.token(start, .string);
                     },
+                    '\\' => {
+                        @panic("TODO backslash");
+                    },
                     else => _ = tkr.take(),
                 },
                 .string_dblquote => switch (tkr.peek()) {
@@ -122,6 +125,9 @@ pub const Tokenizer = struct {
                     '"' => {
                         tkr.state = .string_ending_dblquote;
                         return tkr.token(start, .string);
+                    },
+                    '\\' => {
+                        @panic("TODO backslash");
                     },
                     else => _ = tkr.take(),
                 },

@@ -2,8 +2,8 @@ file = decl[';'];
 
 // eg namespace{} is decl[';']
 decl =
-	| ('pub' vardecl)<pubvariable>
-	| vardecl
+	| ('pub'?<public> vardecl)<vardecl>
+    | '»'<todo>
 ;
 
 // cast syntax: <i32>some_expression();
