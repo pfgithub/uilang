@@ -1,0 +1,1 @@
+/home/pfg/.config/nvim/syntax/resyn.vim
