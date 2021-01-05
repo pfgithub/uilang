@@ -40,6 +40,9 @@ pub fn main() !void {
         try root_env.put(name, decl_v);
     }
 
+    // const sample_html = root_ns.get("sample_html").analyze();
+    // analyzes at comptime I guess
+
     //root_ns.get("main");
 
     // parse file into root_ns and root_env
@@ -212,7 +215,7 @@ fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Erro
         ast.Expression => try printExpr(node, out, indent),
         ast.Function => {
             try out.print("{}(", .{switch (node.kind) {
-                .function => @as([]const u8, "function"),
+                .function => @as([]const u8, "fn"),
                 .widget => "widget",
             }});
             for (node.args) |arg, i| {
