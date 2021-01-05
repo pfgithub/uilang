@@ -46,7 +46,7 @@ namespaceexpr = 'namespace' '{' decl[';']<body> '}';
 // returns from a function, not a block or some parenthesis
 returnstatement = 'return' expression;
 
-dotitem = '.' #lockin() (htmlelement | htmlattribute)<value>;
+dotitem = '.' #lockin() (htmlelement | htmlattribute | identifier<enumliteral>)<value>;
 htmlelement = identifier<tag> array;
 htmlattribute = identifier<attrname> '=' expression<value>;
 

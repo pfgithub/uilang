@@ -47,6 +47,8 @@ const sample_html = .html[
     ],
 ];
 
+const test_enum = @enum(.one, .two): .one;
+
 const CharacterView = widget() html: {
     const traits = @obj(.a=string, .b=string)[]: [];
     true; false;
