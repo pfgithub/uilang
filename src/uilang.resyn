@@ -8,6 +8,7 @@ decl =
 
 // cast syntax: <i32>some_expression();
 // TODO prefix operators here
+// TODO expression should #lockin() and must be the last of any or
 expression =
 	| #operator((('+' '=')<pleq> | ('-' '=')<meq> | '='<eq>)<op>)<assignop>
 	| #operator((('=' '=')<eqeq> | ('!' '=')<neq>)<op>)<compareop>
@@ -17,6 +18,7 @@ expression =
 	| function
 	| namespaceexpr
 	| returnstatement
+    | array
 	| dotitem
 	| parens
 	| block
@@ -25,7 +27,10 @@ expression =
 	| string
 	| pipelineplaceholder
 	| builtinexpr
+    | multilinestringexpr
 ;
+
+multilinestringexpr = ('\\' #lockin() 'lang' '=' '.' :identifier)?<langprefix> :multiline_string[]<strlines>;
 
 pipelineplaceholder = '#' identifier?;
 
@@ -60,7 +65,7 @@ string = :string_start<> #lockin() (:string | :string_escape<escape>)[]<bits> :s
 
 suffixop =
 	| ('.' identifier)<fieldaccess>
-	| ('^' identifier)<pipeline>
+	| ('^' expression)<pipeline>
 	| ('catch' expression)<catchexpr>
 	| ('orelse' expression)<orelseexpr>
 	| ('(' expression[',']<args> ')')<call>

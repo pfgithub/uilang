@@ -7,6 +7,7 @@ const State = enum {
     string_ending_dblquote,
     comment,
     number,
+    multiline_string,
 };
 // why not just a union of name: []const u8?
 pub const Token = struct {
@@ -18,6 +19,7 @@ pub const Token = struct {
         string_end,
         punctuation,
         number,
+        multiline_string,
     };
     kind: TokenType,
     text: []const u8,
@@ -74,6 +76,15 @@ pub const Tokenizer = struct {
                             tkr.state = .string_dblquote;
                             return tkr.token(start, .string_start);
                         },
+                        '\\' => {
+                            _ = tkr.take();
+                            if (tkr.peek() != '\\') {
+                                return tkr.token(start, .punctuation);
+                            }
+                            _ = tkr.take();
+                            tkr.state = .multiline_string;
+                            start = tkr.current;
+                        },
                         '/' => {
                             _ = tkr.take();
                             if (tkr.peek() != '/') {
@@ -81,6 +92,7 @@ pub const Tokenizer = struct {
                             }
                             _ = tkr.take();
                             tkr.state = .comment;
+                            start = tkr.current;
                         },
                         else => |char| {
                             inline for ("[]{}();:,=|?<>!#*+/-.@^") |c| {
@@ -148,7 +160,17 @@ pub const Tokenizer = struct {
                     else => unreachable, // shouldn't be in this state
                 },
                 .comment => switch (tkr.peek()) {
-                    0, '\n' => tkr.state = .main,
+                    0, '\n' => {
+                        tkr.state = .main;
+                        start = tkr.current;
+                    },
+                    else => _ = tkr.take(),
+                },
+                .multiline_string => switch (tkr.peek()) {
+                    0, '\n' => {
+                        tkr.state = .main;
+                        return tkr.token(start, .multiline_string);
+                    },
                     else => _ = tkr.take(),
                 },
             }
@@ -170,30 +192,66 @@ fn GetResType(comptime aname: []const u8) type {
 
 pub fn printSyntaxHighlight(text: []const u8, out: anytype) @TypeOf(out).Error!void {
     var tokenizer = Tokenizer.init(text);
+    var prev_token: Token = Token{ .kind = .identifier, .text = ".", .start = 0 };
     while (true) {
         const start = tokenizer.current;
         const nextToken = tokenizer.next() catch {
             try out.print("\x1b[31m{}\x1b(B\x1b[m", .{tokenizer.text[start..]});
             break;
         };
-        const token = nextToken orelse break;
+        const token = nextToken orelse {
+            try out.writeAll(tokenizer.text[start..]);
+            break;
+        };
         const here = tokenizer.current;
+        const strstart = here - token.text.len;
+        try out.writeAll("\x1b(B\x1b[m");
+        for (tokenizer.text[start..strstart]) |char| {
+            switch (char) {
+                '\t' => try out.writeAll("→   "),
+                else => try out.writeByte(char),
+            }
+        }
         switch (token.kind) {
-            .identifier => try out.writeAll("\x1b[97m"),
+            .identifier => blk: {
+                if (prev_token.kind == .punctuation) {
+                    switch (prev_token.text[0]) {
+                        '@' => break :blk try out.writeAll("\x1b[96m"),
+                        '\\' => break :blk try out.writeAll("\x1b[93m"),
+                        '.' => break :blk try out.writeAll("\x1b[38;5;224m"),
+                        else => {},
+                    }
+                }
+                if (std.meta.stringToEnum(enum { @"pub", @"state", @"const", @"memo", @"var", @"let", @"trigger" }, token.text)) |_| {
+                    try out.writeAll("\x1b[94m");
+                } else if (std.meta.stringToEnum(enum { @"widget", @"fn", @"if", @"else", @"return", @"while", @"switch", @"for", @"or", @"and", @"try", @"catch", @"orelse" }, token.text)) |_| {
+                    try out.writeAll("\x1b[93m");
+                } else if (std.meta.stringToEnum(enum { @"html", @"string", @"attribute", @"f64", @"i51", @"void" }, token.text)) |_| {
+                    try out.writeAll("\x1b[94m");
+                } else if (std.meta.stringToEnum(enum { @"null", @"false", @"true" }, token.text)) |_| {
+                    try out.writeAll("\x1b[97m");
+                }
+            },
             .string_start => try out.writeAll("\x1b[32m"),
             .string_end => try out.writeAll("\x1b[32m"),
             .string => try out.writeAll("\x1b[92m"),
             .string_escape => try out.writeAll("\x1b[94m"),
-            .punctuation => try out.writeAll("\x1b[38;5;245m"),
+            .punctuation => switch (token.text[0]) {
+                '@' => try out.writeAll("\x1b[36m"),
+                ':', '=', '#', '^', '|', '.', '!', '>', '<', '+', '-', '*', '/', '\\' => try out.writeAll("\x1b[93m"),
+                else => try out.writeAll("\x1b[38;5;240m"),
+            },
             .number => try out.writeAll("\x1b[96m"),
+            .multiline_string => try out.writeAll("\x1b[92m"),
         }
-        for (tokenizer.text[start..here]) |char| {
+        for (tokenizer.text[strstart..here]) |char| {
             switch (char) {
                 '\t' => try out.writeAll("    "),
                 else => try out.writeByte(char),
             }
         }
         try out.writeAll("\x1b(B\x1b[m");
+        prev_token = token;
     }
 }
 

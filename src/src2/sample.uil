@@ -28,6 +28,30 @@ const Counter = widget() html: {
     ];
 };
 
+const sample_html = .html[
+    .head[
+        .title["Character Creator"],
+        .style[
+            \lang=.css
+            \\html{
+            \\  display: grid;
+            \\  grid-template-columns: 1fr [start] minmax(0, 800px) [end] 1fr;
+            \\}
+            \\body{
+            \\  grid-column: start / end;
+            \\}
+        ],
+    ],
+    .body[
+        .script[.src="index.js"],
+    ],
+];
+
+const CharacterView = widget() html: {
+    const traits = @obj(.a=string, .b=string)[]: [];
+    true; false;
+};
+
 // react
 //
 // function Counter() {

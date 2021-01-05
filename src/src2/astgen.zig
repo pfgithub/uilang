@@ -8,14 +8,18 @@ usingnamespace @import("../help.zig");
 pub fn main() !void {
     const sample = @embedFile("sample.uil");
 
+    const out = std.io.getStdOut().writer();
+
+    try ast.printSyntaxHighlight(sample, out);
+
+    try out.writeAll("\n\n------\n\n");
+
     var arena_alloc = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_alloc.deinit();
 
     const alloc = &arena_alloc.allocator;
 
     const parsed = try ast.parse(alloc, sample, .File);
-
-    const out = std.io.getStdOut().writer();
 
     try ast.printSyntaxHighlight(blk: {
         var al = std.ArrayList(u8).init(alloc);
@@ -166,7 +170,11 @@ fn printExpr(node: ast.Expression, out: anytype, indent: IndentWriter) @TypeOf(o
                     try out.writeAll(": ");
                     try printAst(implc.expression.*, out, indent);
                 },
-                else => try out.print("«<{}>»", .{std.meta.tagName(sfxop.suffixop.*)}),
+                .pipeline => |pplne| {
+                    try out.writeAll("^"); // »
+                    try printAst(pplne.expression.*, out, indent);
+                },
+                else => try out.print("[@todo.{}]", .{std.meta.tagName(sfxop.suffixop.*)}),
             }
         },
         else => try out.print("@todo(.{})", .{std.meta.tagName(node)}),
@@ -189,12 +197,24 @@ fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Erro
             else => @panic("notprintsupport"),
         },
         ast.Vardecl => {
-            try out.print("{} {} = ", .{ std.meta.tagName(node.vartype), node.name.* });
+            try out.print("{} {} = ", .{
+                switch (node.vartype) {
+                    .const_ => @as([]const u8, "const"),
+                    .let => "var",
+                    .state => "state",
+                    .memo => "memo",
+                    .trigger => "trigger",
+                },
+                node.name.*,
+            });
             try printAst(node.initv.*, out, indent);
         },
         ast.Expression => try printExpr(node, out, indent),
         ast.Function => {
-            try out.print("{}(", .{std.meta.tagName(node.kind)});
+            try out.print("{}(", .{switch (node.kind) {
+                .function => @as([]const u8, "function"),
+                .widget => "widget",
+            }});
             for (node.args) |arg, i| {
                 if (i != 0) try out.writeAll(", ");
                 try out.print("{}", .{arg});
