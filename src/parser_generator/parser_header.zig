@@ -95,7 +95,7 @@ pub const Tokenizer = struct {
                             start = tkr.current;
                         },
                         else => |char| {
-                            inline for ("[]{}();:,=|?<>!#*+/-.@^") |c| {
+                            inline for ("[]{}();:,=|?<>!#*+/-.@^&") |c| {
                                 if (char == c) {
                                     _ = tkr.take();
                                     return tkr.token(start, .punctuation);
@@ -224,7 +224,7 @@ pub fn printSyntaxHighlight(text: []const u8, out: anytype) @TypeOf(out).Error!v
                 }
                 if (std.meta.stringToEnum(enum { @"pub", @"state", @"const", @"memo", @"var", @"let", @"trigger" }, token.text)) |_| {
                     try out.writeAll("\x1b[94m");
-                } else if (std.meta.stringToEnum(enum { @"widget", @"fn", @"if", @"else", @"return", @"while", @"switch", @"for", @"or", @"and", @"try", @"catch", @"orelse" }, token.text)) |_| {
+                } else if (std.meta.stringToEnum(enum { @"widget", @"fn", @"if", @"else", @"return", @"while", @"switch", @"for", @"or", @"and", @"try", @"catch", @"orelse", @"defer", @"once" }, token.text)) |_| {
                     try out.writeAll("\x1b[93m");
                 } else if (std.meta.stringToEnum(enum { @"html", @"string", @"attribute", @"f64", @"i51", @"void" }, token.text)) |_| {
                     try out.writeAll("\x1b[94m");

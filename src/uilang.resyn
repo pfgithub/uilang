@@ -9,12 +9,15 @@ decl =
 // cast syntax: <i32>some_expression();
 // TODO prefix operators here
 // TODO expression should #lockin() and must be the last of any or
+// TODO prefix addrof
 expression =
 	| #operator((('+' '=')<pleq> | ('-' '=')<meq> | '='<eq>)<op>)<assignop>
 	| #operator((('=' '=')<eqeq> | ('!' '=')<neq>)<op>)<compareop>
 	| #operator(('+'<plus> | '-'<minus>)<op>)<plusminusop>
 	| #suffix(suffixop)<suffixop>
 	| vardecl
+    | onceexpr
+    | deferexpr
 	| function
 	| namespaceexpr
 	| returnstatement
@@ -45,6 +48,9 @@ namespaceexpr = 'namespace' '{' decl[';']<body> '}';
 
 // returns from a function, not a block or some parenthesis
 returnstatement = 'return' expression;
+
+onceexpr = 'once' expression;
+deferexpr = 'defer' expression;
 
 dotitem = '.' #lockin() (htmlelement | htmlattribute | identifier<enumliteral>)<value>;
 htmlelement = identifier<tag> array;
