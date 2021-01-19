@@ -133,7 +133,7 @@ const Structure = struct {
                         },
                         .suffix => |cse| {
                             try out.print(
-                                "struct {{ _: *_{}, {}: ",
+                                "struct {{ _: *_{}, {s}: ",
                                 .{ structure.typeNameID, cse.name.? },
                             );
                             try cse.print(out, mode);
@@ -342,9 +342,19 @@ fn parseString(alloc: *Alloc, string: parser.String) ![]const u8 {
     return res.toOwnedSlice();
 }
 
-// miscompilation workaround
-fn stringIf(condition: bool, one: []const u8, two: []const u8) []const u8 {
-    if (condition) return one else return two;
+const StringPrint = struct {
+    str: []const u8,
+    pub fn format(value: StringPrint, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        try writer.writeAll(value.str);
+    }
+};
+pub fn s(content: []const u8) StringPrint {
+    return StringPrint{ .str = content };
+}
+
+// miscompilation workaround + {s} workaround
+fn stringIf(condition: bool, one: []const u8, two: []const u8) StringPrint {
+    if (condition) return s(one) else return s(two);
 }
 
 fn autoTokenKind(token: []const u8) []const u8 {
@@ -383,10 +393,10 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
 
                         try out.print(
                             \\    blk: {{
-                            \\        return _{}{{ .{} = _{}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => break :blk}} }};
+                            \\        return _{}{{ .{s} = _{}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => break :blk}} }};
                             \\    }}
                         ,
-                            .{ structure.typeNameID, value.field, fnid },
+                            .{ structure.typeNameID, s(value.field), fnid },
                         );
                     },
                     .operator => |*nost| {
@@ -410,7 +420,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                         const named_compiler_hack = named orelse named_compiler_hack_2;
 
                         try out.print(
-                            \\    const FieldType = std.meta.Child(std.meta.fieldInfo(_{0}, "{3}").field_type);
+                            \\    const FieldType = std.meta.Child(std.meta.fieldInfo(_{0}, .{3}).field_type);
                             \\    var resAL = std.ArrayList(FieldType).init(parser.alloc);
                             \\    {9}{4}_ = _{1}(parser) catch |e| switch(e) {{else => return e, error.Recoverable => {{}}}}; // optional first joiner
                             \\    // optional first joiner is not allowed with a named arg. that's a dumb special case but whatever
@@ -436,14 +446,14 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                             structure.typeNameID,
                             joinerFnID,
                             nextFunctionHalf,
-                            value.field,
+                            s(value.field),
                             stringIf(nost.* == null, "//", ""),
                             stringIf(nost.* == null, "break", "return parser.err(\"last or disallowed\")"),
                             stringIf(named != null, ".{._ = ", ""),
                             stringIf(named != null, "}", ""),
                             stringIf(named == null, "//", ""),
                             stringIf(named == null, "", "//"),
-                            named_compiler_hack,
+                            s(named_compiler_hack),
                             stringIf(named == null, "struct{_: FieldType}", "."),
                             stringIf(named == null, "_", "opslot.*"),
                             stringIf(named == null, "", "._"),
@@ -496,7 +506,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
                             \\    const sb = parser.startBit();
                             \\    errdefer parser.cancelBit(sb);
                             \\
-                        , .{ nextFunctionHalf, suffixopFnID, value.field, nost.name.?, structure.typeNameID });
+                        , .{ nextFunctionHalf, suffixopFnID, s(value.field), s(nost.name.?), structure.typeNameID });
                     },
                 }
             }
@@ -563,7 +573,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
             try structure.print(out, .zigonly);
             try out.writeAll("{\n");
             for (resMap.items) |rv| {
-                try out.print("        .{} = _{},\n", .{ rv.name, rv.id });
+                try out.print("        .{} = _{},\n", .{ s(rv.name), rv.id });
             }
             try out.writeAll("        ._start = start,");
             try out.writeAll("        ._end = end,");
@@ -601,7 +611,7 @@ pub fn codegenForStructure(alloc: *Alloc, generator: *Generator, structure: Stru
         },
         .token => |tk| {
             try out.writeAll("    return ");
-            try out.print("    (try _parseToken(parser, .{}, ", .{tk.kind});
+            try out.print("    (try _parseToken(parser, .{}, ", .{s(tk.kind)});
             if (tk.expected) |xpcdt| try printZigString(xpcdt, out) //zig fmt
             else try out.writeAll("null");
             if (tk.expected == null) try out.writeAll(")).text;\n") //zig fmt

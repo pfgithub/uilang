@@ -30,13 +30,13 @@ pub fn main() !void {
 
     const ns = try analyzeNamespace(alloc, parsed);
 
-    const declaration = ns.val.?.namespace.get("demoeg");
+    // const declaration = ns.val.?.namespace.get("demoeg");
 
-    const fn_expr = declaration.analyze(alloc);
+    // const fn_expr = declaration.analyze(alloc);
 
-    const ir_scope = IR_Env.new(alloc);
+    // const ir_scope = IR_Env.new(alloc);
 
-    const resv = fn_expr.val.comptime_v.call(ir_scope, &[_]*Data{});
+    // const resv = fn_expr.val.comptime_v.call(ir_scope, &[_]*Data{});
 
     // {
     //    ir_to_call_the_function();
@@ -63,7 +63,7 @@ const IR_Expr = union(enum) {
     get_local: usize,
 };
 
-fn analyzeNamespace(alloc: *Alloc, file: ast.File) !Data {
+fn analyzeNamespace(alloc: *Alloc, file: ast.File) !*Data {
     const root_env = Environment.newRoot(alloc);
     const root_ns = Namespace.new(alloc);
 
@@ -89,18 +89,19 @@ fn analyzeExpression(alloc: *Alloc, env: *Environment, expr: ast.Expression) *Da
     }
 }
 
+const DataVal = union(enum) { comptime_v: Val, runtime_v: IR_Expr };
 const Data = struct {
-    pub fn new(alloc: *std.mem.Allocator, ty: Val, val: ?Val) *Data {
+    pub fn new(alloc: *std.mem.Allocator, ty: Val, val: DataVal) *Data {
         return allocDupe(alloc, Data{ .ty = ty, .val = val }) catch @panic("oom");
     }
     ty: Val,
-    val: union(enum) { comptime_v: Val, runtime_v: IR_Expr }, // null if the value is only known at runtime
+    val: DataVal, // null if the value is only known at runtime
 };
 
 // generic functions memoize different functions or comptime values based on the given argument types
 const Function = struct {
     arg_types: []*Val,
-    return_value: struct { uninitialized, analyzing, initialized: *Data },
+    return_value: union(enum) { uninitialized, analyzing, initialized: *Data },
 
     pub fn new(alloc: *std.mem.Allocator, ast: ast.Function) *Function {
         // analyze argument types
@@ -296,10 +297,10 @@ fn printExpr(node: ast.Expression, out: anytype, indent: IndentWriter) @TypeOf(o
                     try out.writeAll("^"); // »
                     try printAst(pplne.expression.*, out, indent);
                 },
-                else => try out.print("[@todo.{}]", .{std.meta.tagName(sfxop.suffixop.*)}),
+                else => try out.print("[@todo.{s}]", .{std.meta.tagName(sfxop.suffixop.*)}),
             }
         },
-        else => try out.print("@todo(.{})", .{std.meta.tagName(node)}),
+        else => try out.print("@todo(.{s})", .{std.meta.tagName(node)}),
     }
 }
 
@@ -319,7 +320,7 @@ fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Erro
             else => @panic("notprintsupport"),
         },
         ast.Vardecl => {
-            try out.print("{} {} = ", .{
+            try out.print("{s} {s} = ", .{
                 switch (node.vartype) {
                     .const_ => @as([]const u8, "const"),
                     .let => "var",
@@ -333,13 +334,13 @@ fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Erro
         },
         ast.Expression => try printExpr(node, out, indent),
         ast.Function => {
-            try out.print("{}(", .{switch (node.kind) {
+            try out.print("{s}(", .{switch (node.kind) {
                 .function => @as([]const u8, "fn"),
                 .widget => "widget",
             }});
             for (node.args) |arg, i| {
                 if (i != 0) try out.writeAll(", ");
-                try out.print("{}", .{arg});
+                try out.print("{s}", .{arg});
             }
             try out.writeAll(") ");
             try printAst(node.expression.*, out, indent);
@@ -354,7 +355,7 @@ fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Erro
         },
         ast.Builtinexpr => {
             // name: *Identifier, args: []expression
-            try out.print("@{}(", .{node.name.*});
+            try out.print("@{s}(", .{node.name.*});
             for (node.args) |arg, i| {
                 if (i != 0) try out.writeAll(", ");
                 try printAst(arg, out, indent);
