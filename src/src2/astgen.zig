@@ -377,7 +377,7 @@ fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Erro
             const indentv = indent.add(1);
             try out.writeAll("\n");
             if (node.langprefix) |lpfx| {
-                try out.print("{}\\lang={s}\n", .{ indentv, lpfx.identifier });
+                try out.print("{}\\lang=.{s}\n", .{ indentv, lpfx.identifier });
             }
             try out.print("{}\\\\{s}\n", .{ indentv, node.strline1 });
             for (node.strlines) |strline| {
