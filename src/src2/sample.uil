@@ -1,5 +1,9 @@
 const std = @import("std");
 
+const demoeg = fn() {
+    return 25;
+};
+
 const other = fn() {
     var result = 25;
     return result;

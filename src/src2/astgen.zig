@@ -28,10 +28,46 @@ pub fn main() !void {
         break :blk al.toOwnedSlice();
     }, out);
 
+    const ns = try analyzeNamespace(alloc, parsed);
+
+    const declaration = ns.val.?.namespace.get("demoeg");
+
+    const fn_expr = declaration.analyze(alloc);
+
+    const ir_scope = IR_Env.new(alloc);
+
+    const resv = fn_expr.val.comptime_v.call(ir_scope, &[_]*Data{});
+
+    // {
+    //    ir_to_call_the_function();
+    // }
+}
+
+const IR_Env = struct {
+    instructions: std.ArrayList(IR_Line),
+    pub fn new(alloc: *std.mem.Allocator) *IR_Env {
+        return allocDupe(alloc, IR_Env{
+            .instructions = std.ArrayList(IR_Line).init(alloc),
+        }) catch @panic("oom");
+    }
+    pub fn add(env: *IR_Env, line: IR_Line) IR_Expr {
+        const res = env.instructions.len;
+        env.instructions.append(line) catch @panic("oom");
+        return .{ .get_local = res };
+    }
+};
+const IR_Line = union(enum) {
+    fn_call: struct { fnc: IR_Expr, args: []IR_Expr },
+};
+const IR_Expr = union(enum) {
+    get_local: usize,
+};
+
+fn analyzeNamespace(alloc: *Alloc, file: ast.File) !Data {
     const root_env = Environment.newRoot(alloc);
     const root_ns = Namespace.new(alloc);
 
-    for (parsed) |decl| {
+    for (file) |decl| {
         const name = decl.vardecl.vardecl.name.*;
         const initv = decl.vardecl.vardecl.initv;
 
@@ -40,42 +76,108 @@ pub fn main() !void {
         try root_env.put(name, decl_v);
     }
 
-    // const sample_html = root_ns.get("sample_html").analyze();
-    // analyzes at comptime I guess
+    return Data.new(alloc, .ty, .{ .comptime_v = .{ .namespace = root_ns } });
+}
 
-    //root_ns.get("main");
-
-    // parse file into root_ns and root_env
+fn analyzeExpression(alloc: *Alloc, env: *Environment, expr: ast.Expression) *Data {
+    switch (expr) {
+        .function => |fnxpr| {
+            const fnv = Function.new(alloc, fnxpr);
+            return Data.new(alloc, .function_ty, .{ .function = fnv });
+        },
+        else => std.debug.panic("TODO {}", .{std.meta.tagName(expr)}),
+    }
 }
 
 const Data = struct {
-    ty: *Val,
-    val: ?*Val, // null if the value is only known at runtime
+    pub fn new(alloc: *std.mem.Allocator, ty: Val, val: ?Val) *Data {
+        return allocDupe(alloc, Data{ .ty = ty, .val = val }) catch @panic("oom");
+    }
+    ty: Val,
+    val: union(enum) { comptime_v: Val, runtime_v: IR_Expr }, // null if the value is only known at runtime
 };
 
-// const a = "hi";
-// typeof a is "hi"
-// const a = string: "hi"
-// typeof a is type{string}
-// const b = "hi": a;
-// this is not valid; a is string, string might ≠ "hi"
-// ah ok
+// generic functions memoize different functions or comptime values based on the given argument types
+const Function = struct {
+    arg_types: []*Val,
+    return_value: struct { uninitialized, analyzing, initialized: *Data },
+
+    pub fn new(alloc: *std.mem.Allocator, ast: ast.Function) *Function {
+        // analyze argument types
+        // if body is castexpresison<…>, analyze return type I guess
+        if (ast.args.len > 0) @panic("TODO analyze argument types");
+
+        return allocDupe(alloc, Function{
+            .arg_types = &[_]*Val{},
+            .return_value = .uninitialized,
+        }) catch @panic();
+    }
+    pub fn call(fnc: *Function, alloc: *std.mem.Allocator, ir_env: *IR_Env, args: []*Data) *Data {
+        if (args.len > 0) @panic("TODO function arguments");
+        // :: cast the arguments
+        // eg
+        // const demo = fn(a: i32, b: i32) void: {}
+        // demo(25, 50)
+        // ::
+        // %1 = 25
+        // %2 = 50
+        // %3 = @getconst(:fn:)
+        // %4 = @as(i32, %1)
+        // %5 = @as(i32, %2)
+        // %6 = @call(%3, %4, %5)
+        // or something idk
+        if (fnc.return_value == .analyzing) @panic("analysis loop");
+        const res_type = fnc.analyze();
+        // add a thing to the ir @call(res_type.val) → res_type.ty;
+        // uuh how
+    }
+};
+
+// const MemoizedType = struct {
+//     args: []*Data,
+//     return_value: *Data,
+//     // this is a comptime value :: a function that is not generic
+//     // tbh there's no reason to make generic functions yet if they're not
+// };
+// const Function = struct {
+//     memoized_types: std.ArrayList(MemoizedType),
+//     args: []FunctionArg,
+//     alloc: *std.mem.Allocator,
+//     const FunctionArg = struct {};
+
+//     pub fn new(alloc: *std.mem.Allocator) *Function {
+//         return allocDupe(alloc, Function{
+//             .memoized_types = std.ArrayList(MemoizedType).init(alloc),
+//             .args = &[_]FunctionArg{},
+//             .alloc = alloc,
+//         }) catch @panic("oom");
+//     }
+
+//     fn codegen(function: *Function, final_arg_types: []*Data) MemoizedType {
+//         if (final_arg_types.len > 0) @panic("TODO");
+//         if (function.args.len > 0) @panic("TODO");
+
+//         if (function.memoized_types.len > 0) {
+//             return function.memoized_types[0];
+//         }
+//         const at_dupe = function.alloc.dupe(*Data, final_arg_types);
+//         function.memoized_types.append(MemoizedType{args: final_arg_types, data: });
+//     }
+
+//     pub fn call(function: *Function, ir_env: *IR_Env, args: []*Data) *Data {
+//         if (function.args.len > 0) @panic("TODO");
+//         const codegen_res = function.codegen(&[_]*Data{});
+//         // call the codegen'd function
+//     }
+// };
 
 const Val = union(enum) {
-    typ: struct {
-        // workaround because zig compiler doesn't like `type: @TagType(@This())` atm
-        value: u32,
-        fn get(slf: @This()) @TagType(Val) {
-            return @intToEnum(@TagType(Val), slf.value);
-        }
-        fn set(val: @TagType(Val)) @This() {
-            return .{ .value = @enumToInt(val) };
-        }
-    },
+    ty,
+    function_ty,
     number: f64,
-    float: f64,
-    comptime_string: []const StringBit,
     string: []const u8,
+    namespace: *Namespace,
+    function: *Function,
 };
 
 const Declaration = struct {
@@ -86,9 +188,23 @@ const Declaration = struct {
         },
         analyzing: void,
         initialized: struct {
-            data: Data,
+            data: *Data,
         },
     },
+    pub fn analyze(decl: *Declaration, alloc: *std.mem.Allocator) *Data {
+        switch (decl.value) {
+            .uninitialized => |unin| {
+                const env = unin.env;
+                const code = unin.code;
+                unin.value = .analyzing;
+                const resv = analyzeExpression(alloc, env, code);
+                unin.value = .{ .initialized = .{ .data = resv } };
+                return resv;
+            },
+            .analyzing => @panic("analysis loop"),
+            .initialized => |v| return v.data,
+        }
+    }
     pub fn new(alloc: *std.mem.Allocator, env: *Environment, code: *ast.Expression) *Declaration {
         return allocDupe(alloc, Declaration{
             .value = .{ .uninitialized = .{ .env = env, .code = code } },
@@ -108,6 +224,9 @@ const Namespace = struct {
         return allocDupe(alloc, Namespace{
             .declarations = std.StringHashMap(*Declaration).init(alloc),
         }) catch @panic("oom");
+    }
+    pub fn get(ns: *Namespace, name: []const u8) ?*Declaration {
+        return ns.declarations.get(name);
     }
     pub fn put(ns: *Namespace, name: []const u8, decl: *Declaration) !void {
         const v = ns.declarations.getOrPut(name) catch @panic("oom");
