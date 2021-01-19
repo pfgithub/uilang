@@ -78,6 +78,14 @@ const CharacterView = widget() html: {
     true; false;
 };
 
+const demo_mtl_str =
+    \lang=.js
+    \\console.log("Hello, World!");
+    \\if(true) {
+    \\    false;
+    \\}
+;
+
 // react
 //
 // function Counter() {

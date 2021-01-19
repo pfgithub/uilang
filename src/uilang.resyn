@@ -33,7 +33,7 @@ expression =
     | multilinestringexpr
 ;
 
-multilinestringexpr = ('\\' #lockin() 'lang' '=' '.' :identifier)?<langprefix> :multiline_string[]<strlines>;
+multilinestringexpr = ('\\' 'lang' '=' '.' :identifier)?<langprefix> :multiline_string<strline1> :multiline_string[]<strlines>;
 
 pipelineplaceholder = '#' identifier?;
 

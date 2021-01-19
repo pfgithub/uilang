@@ -286,6 +286,7 @@ fn printExpr(node: ast.Expression, out: anytype, indent: IndentWriter) @TypeOf(o
         .block => |n| try printAst(n.*, out, indent),
         .variable => |n| try printAst(n.*, out, indent),
         .vardecl => |n| try printAst(n.*, out, indent),
+        .multilinestringexpr => |n| try printAst(n.*, out, indent),
         .suffixop => |sfxop| {
             try printAst(sfxop._.*, out, indent);
             switch (sfxop.suffixop.*) {
@@ -371,6 +372,18 @@ fn printAst(node: anytype, out: anytype, indent: IndentWriter) @TypeOf(out).Erro
             }
             if (node.decls.len > 0) try out.print("\n{}", .{indent});
             try out.writeAll("}");
+        },
+        ast.Multilinestringexpr => {
+            const indentv = indent.add(1);
+            try out.writeAll("\n");
+            if (node.langprefix) |lpfx| {
+                try out.print("{}\\lang={s}\n", .{ indentv, lpfx.identifier });
+            }
+            try out.print("{}\\\\{s}\n", .{ indentv, node.strline1 });
+            for (node.strlines) |strline| {
+                try out.print("{}\\\\{s}\n", .{ indentv, strline });
+            }
+            try out.print("{}", .{indent});
         },
         ast.Variable => {
             try out.writeAll(node.name.*);
