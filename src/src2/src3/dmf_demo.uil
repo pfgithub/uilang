@@ -1,0 +1,26 @@
+const ResourcesSpec = {resource: string, cost: string}[.]; // [.] a tree I guess. o(log n) access at index, o(log n) insert, …
+
+const ClickerItem = union {
+    none,
+    spacer,
+    separator,
+    counter: {name: string, description: string},
+    button: {
+        name: string,
+        price?: ResourcesSpec,
+        requirements?: ResourcesSpec,
+        effects?: ResourcesSpec,
+    },
+};
+
+const ResourceEditor = widget(item: ResourcesSpec) {
+    return .span[
+        item.map() |resource, index| .span[
+            .input[.type="text", .value=resource.resource, .oninput=fn(e) resource.resource = e.currentTarget.value],
+            " >= ",
+            .input[.type="text", .value=resource.cost, .oninput=fn(e) resource.cost = e.currentTarget.value],
+            .button[.onclick = fn() item.remove(index)],
+        ], 
+        .button[.onclick=fn() item.insert(item.length, {resource: "", cost: "0.00"})],
+    ];
+};

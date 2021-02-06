@@ -6,7 +6,7 @@ decl =
     | '»'<todo>
 ;
 
-// cast syntax: <i32>some_expression();
+// block syntax <blkname>(_ = 25, break <blkname> 50, 10)
 // TODO prefix operators here
 // TODO expression should #lockin() and must be the last of any or
 // TODO prefix addrof

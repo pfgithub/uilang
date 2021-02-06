@@ -270,7 +270,7 @@ pub fn printErrorPos(text: []const u8, message: []const u8, epos: usize, out: an
         }
     }
     var lineText = std.mem.span(@ptrCast([*:'\n']const u8, &text[latestLine]));
-    try out.print("\x1b[1m\x1b[97m./file:{}:{}: \x1b[31merror: \x1b[97m{}\x1b(B\x1b[m\n", .{ lyn + 1, col + 1, message });
+    try out.print("\x1b[1m\x1b[97m./file:{}:{}: \x1b[31merror: \x1b[97m{s}\x1b(B\x1b[m\n", .{ lyn + 1, col + 1, message });
     // would it be bad to tokenize and syntax highlight lineText?
     try printSyntaxHighlight(lineText, out);
     try out.print("\x1b(B\x1b[m\n", .{});

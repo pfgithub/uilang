@@ -6,7 +6,7 @@ const Type = @import("type.zig").Type;
 usingnamespace @import("../help.zig");
 
 pub fn main() !void {
-    const sample = @embedFile("sample.uil");
+    const sample = @embedFile("src3/demo.uil");
 
     const out = std.io.getStdOut().writer();
 
@@ -37,10 +37,6 @@ pub fn main() !void {
     // const ir_scope = IR_Env.new(alloc);
 
     // const resv = fn_expr.val.comptime_v.call(ir_scope, &[_]*Data{});
-
-    // {
-    //    ir_to_call_the_function();
-    // }
 }
 
 const IR_Env = struct {
