@@ -379,7 +379,7 @@ fn evaluateExpr(env: *Environment, decl: ast.Expression, mode: ExecutionMode) Ev
             };
         },
         .function => |func| {
-            const fn_kind = @as(@TagType(@TypeOf(func.kind)), func.kind);
+            const fn_kind = @as(std.meta.Tag(@TypeOf(func.kind)), func.kind);
             if (func.args.len > 0) @panic("TODO fn args");
 
             // fn kind determines some stuff

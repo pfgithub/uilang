@@ -275,7 +275,7 @@ const Structure = struct {
                 return Structure.init(gen, token.token, .{ .token = .{ .kind = token.token, .expected = null } });
             },
             .magic => |magic| {
-                const magicType = std.meta.stringToEnum(@TagType(MagicType), magic.name) orelse unreachable; // TODO report error :: bad magic
+                const magicType = std.meta.stringToEnum(std.meta.Tag(MagicType), magic.name) orelse unreachable; // TODO report error :: bad magic
                 switch (magicType) {
                     .suffix => {
                         if (magic.args.len != 1) unreachable; // TODO report error :: missing args
@@ -817,7 +817,7 @@ pub fn main() !u8 {
 
     const argv = try getArgs(alloc);
     if (argv.len < 2 or argv.len > 3) {
-        std.debug.warn("usage: {} infile.resyn [outfile.zig]\n", .{argv[0]});
+        std.debug.warn("usage: {s} infile.resyn [outfile.zig]\n", .{argv[0]});
         return 1;
     }
 
