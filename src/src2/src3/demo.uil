@@ -1,6 +1,6 @@
 const test = fn() int: {
     let value = int: 10;
-    value = value 25;
+    value = 25;
     return value;
     // return either returns from the function or from a cast expression in a fn body
 };
@@ -15,7 +15,7 @@ const test_emitted =
 ;
 
 //const Counter = widget() html: {
-//    state count = int: 0;
+//    state count = int: 0; // count is of type int*
 //    if(count > 10) return [
 //        "Uh oh! You took the counter too high!",
 //        .button("Reset Counter", .onclick=fn() count = 0),

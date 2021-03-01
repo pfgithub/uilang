@@ -1,0 +1,15 @@
+const DatabaseValueItemEditor = fn(.content: Content(ValueTypedItem?, T.DatabaseType)) html: {
+    switch(content.schema.kind) {
+        .object => |*obj| {
+            const current_value = obj;
+
+            return .div[content.schema.properties»Array.map(#) |prop| (
+                .div[
+                    prop.key, ": ",
+                    DatabaseValueItemEditor(.content=content.extend(&obj.props[prop.key], prop)),
+                ];
+            )];
+        },
+        .text => |txt| {},
+    }
+};

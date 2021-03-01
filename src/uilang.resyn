@@ -25,6 +25,7 @@ expression =
 	| dotitem
 	| parens
 	| block
+	| cfcatch
 	| variable
 	| number
 	| string
@@ -32,6 +33,8 @@ expression =
 	| builtinexpr
     | multilinestringexpr
 ;
+
+cfcatch = '<' :identifier<name> '>' ':' expression;
 
 multilinestringexpr = ('\\' 'lang' '=' '.' :identifier)?<langprefix> :multiline_string<strline1> :multiline_string[]<strlines>;
 
