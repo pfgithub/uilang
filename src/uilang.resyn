@@ -1,4 +1,4 @@
-file = decl[';'];
+file = expression[';'];
 
 // eg namespace{} is decl[';']
 decl =

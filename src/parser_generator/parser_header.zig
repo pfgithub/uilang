@@ -196,7 +196,7 @@ pub fn printSyntaxHighlight(text: []const u8, out: anytype) @TypeOf(out).Error!v
     while (true) {
         const start = tokenizer.current;
         const nextToken = tokenizer.next() catch {
-            try out.print("\x1b[31m{}\x1b(B\x1b[m", .{tokenizer.text[start..]});
+            try out.print("\x1b[31m{s}\x1b(B\x1b[m", .{tokenizer.text[start..]});
             break;
         };
         const token = nextToken orelse {
