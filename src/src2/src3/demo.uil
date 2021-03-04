@@ -1,9 +1,9 @@
-const test = (fn() int): fn() int: {
-    let value = int: 10;
-    value = 25;
-    return value;
-    // return either returns from the function or from a cast expression in a fn body
-};
+//const test = (fn() int): fn() int: {
+//    let value = int: 10;
+//    value = 25;
+//    return value;
+//    // return either returns from the function or from a cast expression in a fn body
+//};
 
 const test_emitted =
     \lang=.js

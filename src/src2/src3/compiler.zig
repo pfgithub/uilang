@@ -91,6 +91,18 @@ pub fn evaluateExpression(scope: *Scope, expr: *ast.Expression) RuntimeError!Typ
                 else => |unkey| std.debug.panic("TODO suffixop expression {s}", .{std.meta.tagName(unkey)}),
             }
         },
+        .multilinestringexpr => |msxpr| {
+            var res_string = std.ArrayList(u8).init(scope.name_map.allocator);
+            res_string.appendSlice(msxpr.strline1) catch @panic("oom");
+            for (msxpr.strlines) |strline| {
+                res_string.append('\n') catch @panic("oom");
+                res_string.appendSlice(strline) catch @panic("oom");
+            }
+            return TypedValue{
+                .ir = IR.strLiteral(scope.name_map.allocator, res_string.items),
+                .ty = Type.new(scope.name_map.allocator, .{ .exact_string = res_string.items }),
+            };
+        },
         else => {
             std.debug.panic("TODO expression {s}", .{std.meta.tagName(expr.*)});
         },
@@ -126,12 +138,15 @@ pub fn evaluateTypeExpression(scope: *Scope, expr: *ast.Expression) RuntimeError
 // returns *IR of type ty
 pub fn cast(ty: *Type, tval: TypedValue) RuntimeError!*IR {
     switch (ty.value) {
-        .int => {
-            switch (tval.ty.value) {
-                .int => return tval.ir,
-                .exact_number => return tval.ir,
-                else => return displayErrorAt(tval.ir, "Error cannot cast {std.meta.tagName(tval.ty.value)} → int"),
-            }
+        .int => switch (tval.ty.value) {
+            .int => return tval.ir,
+            .exact_number => return tval.ir,
+            else => return displayErrorAt(tval.ir, "Error cannot cast {std.meta.tagName(tval.ty.value)} → int"),
+        },
+        .string => switch (tval.ty.value) {
+            .string => return tval.ir,
+            .exact_string => return tval.ir,
+            else => return displayErrorAt(tval.ir, "Error cannot cast {std.meta.tagName(tval.ty.value)} → string"),
         },
         else => {
             std.debug.panic("TODO cast to {s}", .{std.meta.tagName(ty.value)});
@@ -160,18 +175,26 @@ pub const IR = union(enum) {
         code: std.ArrayList(*IR),
     },
     vardecl: VarDecl,
+    string_literal: []const u8,
+    int_literal: u51,
+    float_literal: f64,
     pub fn newBlock(alloc: *std.mem.Allocator) *IR {
         return allocDupe(alloc, IR{ .block = .{ .code = std.ArrayList(*IR).init(alloc) } }) catch @panic("oom");
     }
     pub fn vardecl(alloc: *std.mem.Allocator, vd: VarDecl) *IR {
         return allocDupe(alloc, IR{ .vardecl = vd }) catch @panic("oom");
     }
+    pub fn strLiteral(alloc: *std.mem.Allocator, str: []const u8) *IR {
+        return allocDupe(alloc, IR{ .string_literal = str }) catch @panic("oom");
+    }
 };
 
 const Type = struct {
     const TypeUnion = union(enum) {
-        exact_number, // eg 25
+        exact_number: u51, // eg 25
         int, // eg int: 25
+        exact_string: []const u8, // eg "hi!"
+        string, // eg string: "hi!"
         function: struct { // eg fn() void: {}
             args: []*Type,
             ret_v: *Type,
@@ -204,6 +227,10 @@ pub fn typeOfExpression(scope: *Scope, expr: *ast.Expression) RuntimeError!*Type
                 },
                 else => std.debug.panic("TODO infer type of suffixop expression .{s}", .{std.meta.tagName(sfxop.suffixop.*)}),
             }
+        },
+        .multilinestringexpr => |msxpr| {
+            // TODO return a ct_known_string<msxpr → []const u8>
+            return Type.new(scope.name_map.allocator, .string);
         },
         else => {
             std.debug.panic("TODO infer type of expression .{s}", .{std.meta.tagName(expr.*)});
