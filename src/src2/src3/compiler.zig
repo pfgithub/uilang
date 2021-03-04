@@ -32,6 +32,11 @@ pub fn main() !void {
     for (parsed) |*expr| {
         _ = try evaluateExpression(scope, expr);
     }
+
+    // NEXT:
+    // store the ir from for(parsed) |*expr| into an irblock
+    // render the irblock to jsirblock
+    // render the jsirblock to javascript code
 }
 
 pub fn preinitVariables(scope: *Scope, expr: *ast.Expression) RuntimeError!void {
