@@ -85,6 +85,32 @@ pub fn evaluateExpression(scope: *Scope, expr: *ast.Expression) RuntimeError!Typ
     }
 }
 
+// TODO make this just evaluateExpr at comptime (far future / maybe never)
+pub fn evaluateTypeExpression(scope: *Scope, expr: *ast.Expression) RuntimeError!*Type {
+    switch (expr.*) {
+        .parens => |parens| {
+            if (parens.items.len != 1) std.debug.panic("TODO evaluateTypeExpression parens .len = {}", .{parens.items.len});
+            return evaluateTypeExpression(scope, &parens.items[0]); // in evaluateExpression normally this would make a new scope
+        },
+        .function => |fnction| {
+            if (fnction.args.len > 0) std.debug.panic("TODO evaluateTypeExpression fn(…[.len = {}]) …", .{fnction.args.len});
+            return Type.new(scope.name_map.allocator, .{
+                .function = .{
+                    .args = &[_]*Type{},
+                    .ret_v = try evaluateTypeExpression(scope, fnction.expression),
+                },
+            });
+        },
+        .variable => |varv| {
+            const Examples = enum { int };
+            if (std.meta.stringToEnum(Examples, varv.name.*)) |ste| switch (ste) {
+                .int => return Type.new(scope.name_map.allocator, .int),
+            } else std.debug.panic("TODO evaluateTypeExpression .variable '{s}'", .{varv.name.*});
+        },
+        else => std.debug.panic("TODO evaluateTypeExpression {s}", .{std.meta.tagName(expr.*)}),
+    }
+}
+
 // returns *IR of type ty
 pub fn cast(ty: *Type, tval: TypedValue) RuntimeError!*IR {
     switch (ty.value) {
@@ -159,6 +185,14 @@ pub fn typeOfExpression(scope: *Scope, expr: *ast.Expression) RuntimeError!*Type
     // else @panic("todo infer types")
     switch (expr.*) {
         // type: value => evaluateTypeExpression(type)
+        .suffixop => |sfxop| {
+            switch (sfxop.suffixop.*) {
+                .implicitcast => {
+                    return try evaluateTypeExpression(scope, sfxop._);
+                },
+                else => std.debug.panic("TODO infer type of suffixop expression .{s}", .{std.meta.tagName(sfxop.suffixop.*)}),
+            }
+        },
         else => {
             std.debug.panic("TODO infer type of expression .{s}", .{std.meta.tagName(expr.*)});
         },

@@ -1,4 +1,4 @@
-const test = fn() int: {
+const test = (fn() int): fn() int: {
     let value = int: 10;
     value = 25;
     return value;
