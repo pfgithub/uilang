@@ -79,6 +79,18 @@ pub fn evaluateExpression(scope: *Scope, expr: *ast.Expression) RuntimeError!Typ
                 .ty = Type.new(scope.name_map.allocator, .void),
             };
         },
+        .suffixop => |sfxop| {
+            switch (sfxop.suffixop.*) {
+                .implicitcast => |iplcst| {
+                    const res_type = try evaluateTypeExpression(scope, sfxop._);
+                    return TypedValue{
+                        .ir = try cast(res_type, try evaluateExpression(scope, iplcst.expression)),
+                        .ty = res_type,
+                    };
+                },
+                else => |unkey| std.debug.panic("TODO suffixop expression {s}", .{std.meta.tagName(unkey)}),
+            }
+        },
         else => {
             std.debug.panic("TODO expression {s}", .{std.meta.tagName(expr.*)});
         },
