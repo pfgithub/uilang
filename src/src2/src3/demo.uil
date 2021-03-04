@@ -32,3 +32,12 @@ const Counter_emitted =
     \\      …
     \\  }
 ;
+
+// some notes:
+// const example = widget(num: number) string: {
+//     return "" + num;
+// }
+// this should work too
+// a widget means the return value is watchable and all the arguments are watchable
+// with html return values, that means eg `if(true) return .div() else return .span()` the top level element
+// with strings, it means the string
